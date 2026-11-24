@@ -51,6 +51,8 @@ func writeServiceError(c echo.Context, err error) error {
 		return c.JSON(http.StatusNotFound, errorResponse{Error: "resource not found"})
 	case errors.Is(err, service.ErrConflict):
 		return c.JSON(http.StatusConflict, errorResponse{Error: "conflict"})
+	case errors.Is(err, service.ErrFeedBodyTooLarge):
+		return c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
 	case errors.Is(err, service.ErrFeedFetch):
 		return c.JSON(http.StatusBadGateway, errorResponse{Error: "feed fetch failed"})
 	case errors.Is(err, service.ErrPluginNotFound):

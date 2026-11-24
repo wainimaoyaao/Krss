@@ -900,7 +900,6 @@ func (s *refreshService) refreshFeedWithCookie(ctx context.Context, feed model.F
 			// 51 批 2：先留一份正文头（错误页里常带真实失败原因，分类器要用），再丢弃重试 ——
 			// 否则重试耗尽后只剩「HTTP 503」，分不清是上游挂了还是实例不通
 			bodyHead, _ := io.ReadAll(io.LimitReader(r.Body, 256*1024))
-			_, _ = io.Copy(io.Discard, r.Body)
 			_ = r.Body.Close()
 			lastBodyHead = bodyHead
 			fetchErr = fmt.Errorf("HTTP %d", r.StatusCode)
@@ -959,7 +958,7 @@ func (s *refreshService) refreshFeedWithCookie(ctx context.Context, feed model.F
 	}
 
 	// Read body into memory for Anubis detection and RSS parsing
-	body, err := io.ReadAll(resp.Body)
+	body, err := readRSSBody(resp.Body)
 	if err != nil {
 		errMsg := err.Error()
 		s.recordRSSFailure(ctx, feed, errMsg)
@@ -1035,7 +1034,7 @@ func (s *refreshService) refreshFeedWithFreshClient(ctx context.Context, feed mo
 		return nil
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readRSSBody(resp.Body)
 	if err != nil {
 		logger.Error("feed refresh read failed", "module", "service", "action", "refresh", "resource", "feed", "result", "failed", "feed_id", feed.ID, "feed_title", feed.Title, "error", err)
 		errMsg := err.Error()

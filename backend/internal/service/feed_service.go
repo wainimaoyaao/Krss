@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -140,6 +139,9 @@ func (s *feedService) Add(ctx context.Context, feedURL string, folderID *int64, 
 	}
 
 	fetched, fetchErr := s.fetchFeed(ctx, trimmedURL)
+	if errors.Is(fetchErr, ErrFeedBodyTooLarge) {
+		return model.Feed{}, fetchErr
+	}
 	if fetchErr != nil {
 		logger.Warn("feed fetch failed", "module", "service", "action", "fetch", "resource", "feed", "result", "failed", "host", network.ExtractHost(trimmedURL), "error", fetchErr)
 		// Fetch failed, create feed with error message
@@ -865,10 +867,10 @@ func (s *feedService) fetchFeedWithCookie(ctx context.Context, feedURL string, u
 	}
 
 	// Read body into memory for Anubis detection and RSS parsing
-	body, err := io.ReadAll(resp.Body)
+	body, err := readRSSBody(resp.Body)
 	if err != nil {
 		logger.Warn("feed preview read failed", "module", "service", "action", "fetch", "resource", "feed", "result", "failed", "host", network.ExtractHost(feedURL), "error", err)
-		return feedFetch{}, ErrFeedFetch
+		return feedFetch{}, feedBodyReadError(err)
 	}
 
 	// Try to parse as RSS/Atom
@@ -957,10 +959,10 @@ func (s *feedService) fetchFeedWithFreshClient(ctx context.Context, feedURL stri
 		return feedFetch{}, ErrFeedFetch
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readRSSBody(resp.Body)
 	if err != nil {
 		logger.Warn("feed preview read failed", "module", "service", "action", "fetch", "resource", "feed", "result", "failed", "host", network.ExtractHost(feedURL), "error", err)
-		return feedFetch{}, ErrFeedFetch
+		return feedFetch{}, feedBodyReadError(err)
 	}
 
 	newCookie, anubisErr := trySolveAnubisChallenge(ctx, s.anubis, body, feedURL, resp.Cookies(), req.Header.Clone(), retryCount)
