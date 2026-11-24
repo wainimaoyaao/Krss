@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"krss/backend/internal/model"
+	"krss/backend/internal/repository"
 	"krss/backend/internal/service"
 	"krss/backend/pkg/network"
 )
@@ -40,6 +41,18 @@ type feedRepoStub struct {
 	getByIDFn           func(context.Context, int64) (model.Feed, error)
 	clearAllIconPathsFn func(context.Context) (int64, error)
 	clearAllCondGetFn   func(context.Context) (int64, error)
+}
+
+func (f *feedRepoStub) UpdateRSSRefreshStatus(context.Context, int64, string, *string) error {
+	panic("not implemented")
+}
+
+func (f *feedRepoStub) UpdateURL(context.Context, int64, string) (model.Feed, error) {
+	panic("not implemented")
+}
+
+func (f *feedRepoStub) IngestRSS(context.Context, model.Feed, bool, func(repository.EntryRepository, int64) error) (model.Feed, error) {
+	panic("not implemented")
 }
 
 func (f *feedRepoStub) Create(context.Context, model.Feed) (model.Feed, error) {
@@ -588,7 +601,7 @@ func TestIconService_ExtractIconURLs(t *testing.T) {
 	require.Equal(t, []string{
 		"https://example.com/blog/apple-touch-icon.png", // 相对路径按首页解析
 		"https://cdn.example.com/favicon.ico",           // 协议相对路径
-		"https://example.com/icon-32.png",              // 绝对路径，重复只留一次
+		"https://example.com/icon-32.png",               // 绝对路径，重复只留一次
 	}, got, "应跳过 mask-icon 与 data:，并保持文档顺序")
 }
 

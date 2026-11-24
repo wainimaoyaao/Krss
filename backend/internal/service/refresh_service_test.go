@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"krss/backend/internal/model"
+	"krss/backend/internal/repository"
 	"krss/backend/internal/repository/mock"
 	"krss/backend/internal/service"
 	servicemock "krss/backend/internal/service/mock"
@@ -74,8 +75,7 @@ func TestRefreshService_RefreshFeed_NotModified(t *testing.T) {
 
 	feed := model.Feed{ID: 1, URL: "https://example.com/rss", Title: "Feed"}
 	mockFeeds.EXPECT().GetByID(gomock.Any(), int64(1)).Return(feed, nil)
-	mockFeeds.EXPECT().UpdateErrorMessage(gomock.Any(), int64(1), nil).Return(nil)
-	mockFeeds.EXPECT().ResetRefreshFailure(gomock.Any(), int64(1)).Return(nil)
+	mockFeeds.EXPECT().UpdateRSSRefreshStatus(gomock.Any(), int64(1), gomock.Any(), nil).Return(nil)
 
 	client := &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -113,22 +113,17 @@ func TestRefreshService_RefreshFeed_Success(t *testing.T) {
 
 	feed := model.Feed{ID: 10, URL: "https://example.com/rss", Title: "Feed"}
 	mockFeeds.EXPECT().GetByID(gomock.Any(), int64(10)).Return(feed, nil)
-	mockFeeds.EXPECT().UpdateErrorMessage(gomock.Any(), int64(10), nil).Return(nil)
-
-	mockFeeds.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, updated model.Feed) (model.Feed, error) {
-			require.NotNil(t, updated.ETag)
-			require.NotNil(t, updated.LastModified)
-			return updated, nil
+	mockFeeds.EXPECT().IngestRSS(gomock.Any(), gomock.Any(), false, gomock.Any()).DoAndReturn(
+		func(_ context.Context, feed model.Feed, _ bool, save func(repository.EntryRepository, int64) error) (model.Feed, error) {
+			return feed, save(mockEntries, feed.ID)
 		},
-	)
-	mockFeeds.EXPECT().UpdateSiteURL(gomock.Any(), int64(10), "https://example.com").Return(nil)
+	).AnyTimes()
+
 	mockIcons.EXPECT().FetchAndSaveIconForFeed(gomock.Any(), int64(10), "https://example.com/icon.png", "https://example.com").Return("example.com.png", nil)
 	mockFeeds.EXPECT().UpdateIconPath(gomock.Any(), int64(10), "example.com.png").Return(nil)
 
 	mockEntries.EXPECT().GetExistingEntry(gomock.Any(), int64(10), hashString("https://example.com/1"), "https://example.com/1").Return(nil, nil)
 	mockEntries.EXPECT().CreateOrUpdate(gomock.Any(), gomock.Any()).Return(nil)
-	mockFeeds.EXPECT().ResetRefreshFailure(gomock.Any(), int64(10)).Return(nil)
 
 	client := &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -172,19 +167,17 @@ func TestRefreshService_RefreshFeed_RechecksExistingIcon(t *testing.T) {
 	oldIcon := "github.com.ico"
 	feed := model.Feed{ID: 11, URL: "https://example.com/rss", Title: "Feed", IconPath: &oldIcon}
 	mockFeeds.EXPECT().GetByID(gomock.Any(), int64(11)).Return(feed, nil)
-	mockFeeds.EXPECT().UpdateErrorMessage(gomock.Any(), int64(11), nil).Return(nil)
-	mockFeeds.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, updated model.Feed) (model.Feed, error) {
-			return updated, nil
+	mockFeeds.EXPECT().IngestRSS(gomock.Any(), gomock.Any(), false, gomock.Any()).DoAndReturn(
+		func(_ context.Context, feed model.Feed, _ bool, save func(repository.EntryRepository, int64) error) (model.Feed, error) {
+			return feed, save(mockEntries, feed.ID)
 		},
-	)
-	mockFeeds.EXPECT().UpdateSiteURL(gomock.Any(), int64(11), "https://example.com").Return(nil)
+	).AnyTimes()
+
 	mockIcons.EXPECT().FetchAndSaveIconForFeed(gomock.Any(), int64(11), "https://example.com/icon.png", "https://example.com").Return("abc123.jpg", nil)
 	mockFeeds.EXPECT().UpdateIconPath(gomock.Any(), int64(11), "abc123.jpg").Return(nil)
 
 	mockEntries.EXPECT().GetExistingEntry(gomock.Any(), int64(11), hashString("https://example.com/1"), "https://example.com/1").Return(nil, nil)
 	mockEntries.EXPECT().CreateOrUpdate(gomock.Any(), gomock.Any()).Return(nil)
-	mockFeeds.EXPECT().ResetRefreshFailure(gomock.Any(), int64(11)).Return(nil)
 
 	client := &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -221,8 +214,11 @@ func TestRefreshService_RefreshFeed_FallbackUserAgent(t *testing.T) {
 
 	feed := model.Feed{ID: 2, URL: "https://example.com/rss", Title: "Feed"}
 	mockFeeds.EXPECT().GetByID(gomock.Any(), int64(2)).Return(feed, nil)
-	mockFeeds.EXPECT().UpdateErrorMessage(gomock.Any(), int64(2), nil).Return(nil)
-	mockFeeds.EXPECT().UpdateSiteURL(gomock.Any(), int64(2), "https://example.com").Return(nil)
+	mockFeeds.EXPECT().IngestRSS(gomock.Any(), gomock.Any(), false, gomock.Any()).DoAndReturn(
+		func(_ context.Context, feed model.Feed, _ bool, save func(repository.EntryRepository, int64) error) (model.Feed, error) {
+			return feed, save(mockEntries, feed.ID)
+		},
+	).AnyTimes()
 
 	settings := &settingsServiceStub{fallbackUserAgent: "UA-Test"}
 
@@ -247,7 +243,6 @@ func TestRefreshService_RefreshFeed_FallbackUserAgent(t *testing.T) {
 
 	mockEntries.EXPECT().GetExistingEntry(gomock.Any(), int64(2), hashString("https://example.com/1"), "https://example.com/1").Return(nil, nil)
 	mockEntries.EXPECT().CreateOrUpdate(gomock.Any(), gomock.Any()).Return(nil)
-	mockFeeds.EXPECT().ResetRefreshFailure(gomock.Any(), int64(2)).Return(nil)
 
 	svc := service.NewRefreshService(
 		mockFeeds,
@@ -314,9 +309,11 @@ func TestRefreshService_RefreshFeed_SameGUIDDifferentURL_SecondRefreshCountsAsUp
 
 	feed := model.Feed{ID: 20, URL: "https://example.com/rss", Title: "Feed"}
 	mockFeeds.EXPECT().GetByID(gomock.Any(), int64(20)).Return(feed, nil).Times(2)
-	mockFeeds.EXPECT().UpdateErrorMessage(gomock.Any(), int64(20), nil).Return(nil).Times(2)
-	mockFeeds.EXPECT().ResetRefreshFailure(gomock.Any(), int64(20)).Return(nil).Times(2)
-	mockFeeds.EXPECT().UpdateSiteURL(gomock.Any(), int64(20), "https://example.com").Return(nil).Times(2)
+	mockFeeds.EXPECT().IngestRSS(gomock.Any(), gomock.Any(), false, gomock.Any()).DoAndReturn(
+		func(_ context.Context, feed model.Feed, _ bool, save func(repository.EntryRepository, int64) error) (model.Feed, error) {
+			return feed, save(mockEntries, feed.ID)
+		},
+	).AnyTimes()
 
 	var call int
 	const rssTemplate = `<?xml version="1.0" encoding="UTF-8"?>
@@ -439,10 +436,8 @@ func TestRefreshService_RefreshFeeds_WithRateLimit(t *testing.T) {
 	}
 
 	mockFeeds.EXPECT().GetByIDs(gomock.Any(), []int64{1, 2}).Return(feeds, nil)
-	mockFeeds.EXPECT().UpdateErrorMessage(gomock.Any(), int64(1), nil).Return(nil)
-	mockFeeds.EXPECT().UpdateErrorMessage(gomock.Any(), int64(2), nil).Return(nil)
-	mockFeeds.EXPECT().ResetRefreshFailure(gomock.Any(), int64(1)).Return(nil)
-	mockFeeds.EXPECT().ResetRefreshFailure(gomock.Any(), int64(2)).Return(nil)
+	mockFeeds.EXPECT().UpdateRSSRefreshStatus(gomock.Any(), int64(1), gomock.Any(), nil).Return(nil)
+	mockFeeds.EXPECT().UpdateRSSRefreshStatus(gomock.Any(), int64(2), gomock.Any(), nil).Return(nil)
 
 	client := &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -478,14 +473,13 @@ func TestRefreshService_RefreshFeedWithFreshClient_HTTPError(t *testing.T) {
 	mockEntries := mock.NewMockEntryRepository(ctrl)
 
 	feed := model.Feed{ID: 5, URL: "https://example.com/rss", Title: "Feed"}
-	mockFeeds.EXPECT().UpdateErrorMessage(gomock.Any(), int64(5), gomock.Any()).DoAndReturn(
-		func(_ context.Context, _ int64, msg *string) error {
+	mockFeeds.EXPECT().UpdateRSSRefreshStatus(gomock.Any(), int64(5), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ int64, _ string, msg *string) error {
 			require.NotNil(t, msg)
 			require.Equal(t, "HTTP 500", *msg)
 			return nil
 		},
 	)
-	mockFeeds.EXPECT().RecordRefreshFailure(gomock.Any(), int64(5), gomock.Any()).Return(nil)
 
 	client := &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -543,8 +537,7 @@ func TestRefreshService_ForceRefresh_SkipsConditionalHeaders(t *testing.T) {
 
 	mockFeeds.EXPECT().GetByID(gomock.Any(), int64(7)).Return(feed, nil)
 	mockFeeds.EXPECT().List(gomock.Any(), (*int64)(nil)).Return([]model.Feed{feed}, nil)
-	mockFeeds.EXPECT().UpdateErrorMessage(gomock.Any(), int64(7), nil).Return(nil).AnyTimes()
-	mockFeeds.EXPECT().ResetRefreshFailure(gomock.Any(), int64(7)).Return(nil).AnyTimes()
+	mockFeeds.EXPECT().UpdateRSSRefreshStatus(gomock.Any(), int64(7), gomock.Any(), nil).Return(nil).AnyTimes()
 
 	svc := service.NewRefreshService(
 		mockFeeds,

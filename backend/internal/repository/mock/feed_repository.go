@@ -12,6 +12,7 @@ package mock
 import (
 	context "context"
 	model "krss/backend/internal/model"
+	repository "krss/backend/internal/repository"
 	reflect "reflect"
 	time "time"
 
@@ -161,6 +162,21 @@ func (mr *MockFeedRepositoryMockRecorder) GetByIDs(ctx, ids any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByIDs", reflect.TypeOf((*MockFeedRepository)(nil).GetByIDs), ctx, ids)
 }
 
+// IngestRSS mocks base method.
+func (m *MockFeedRepository) IngestRSS(ctx context.Context, feed model.Feed, create bool, save func(repository.EntryRepository, int64) error) (model.Feed, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IngestRSS", ctx, feed, create, save)
+	ret0, _ := ret[0].(model.Feed)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IngestRSS indicates an expected call of IngestRSS.
+func (mr *MockFeedRepositoryMockRecorder) IngestRSS(ctx, feed, create, save any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IngestRSS", reflect.TypeOf((*MockFeedRepository)(nil).IngestRSS), ctx, feed, create, save)
+}
+
 // List mocks base method.
 func (m *MockFeedRepository) List(ctx context.Context, folderID *int64) ([]model.Feed, error) {
 	m.ctrl.T.Helper()
@@ -276,6 +292,20 @@ func (mr *MockFeedRepositoryMockRecorder) UpdateProxyOverride(ctx, id, mode, cfg
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateProxyOverride", reflect.TypeOf((*MockFeedRepository)(nil).UpdateProxyOverride), ctx, id, mode, cfg)
 }
 
+// UpdateRSSRefreshStatus mocks base method.
+func (m *MockFeedRepository) UpdateRSSRefreshStatus(ctx context.Context, id int64, url string, message *string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateRSSRefreshStatus", ctx, id, url, message)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateRSSRefreshStatus indicates an expected call of UpdateRSSRefreshStatus.
+func (mr *MockFeedRepositoryMockRecorder) UpdateRSSRefreshStatus(ctx, id, url, message any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateRSSRefreshStatus", reflect.TypeOf((*MockFeedRepository)(nil).UpdateRSSRefreshStatus), ctx, id, url, message)
+}
+
 // UpdateSiteURL mocks base method.
 func (m *MockFeedRepository) UpdateSiteURL(ctx context.Context, id int64, siteURL string) error {
 	m.ctrl.T.Helper()
@@ -316,4 +346,19 @@ func (m *MockFeedRepository) UpdateTypeByFolderID(ctx context.Context, folderID 
 func (mr *MockFeedRepositoryMockRecorder) UpdateTypeByFolderID(ctx, folderID, feedType any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateTypeByFolderID", reflect.TypeOf((*MockFeedRepository)(nil).UpdateTypeByFolderID), ctx, folderID, feedType)
+}
+
+// UpdateURL mocks base method.
+func (m *MockFeedRepository) UpdateURL(ctx context.Context, id int64, url string) (model.Feed, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateURL", ctx, id, url)
+	ret0, _ := ret[0].(model.Feed)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateURL indicates an expected call of UpdateURL.
+func (mr *MockFeedRepositoryMockRecorder) UpdateURL(ctx, id, url any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateURL", reflect.TypeOf((*MockFeedRepository)(nil).UpdateURL), ctx, id, url)
 }

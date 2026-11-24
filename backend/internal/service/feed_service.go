@@ -179,7 +179,21 @@ func (s *feedService) Add(ctx context.Context, feedURL string, folderID *int64, 
 		LastModified: optionalString(fetched.lastModified),
 	}
 
-	created, err := s.feeds.Create(ctx, feed)
+	var newEntries []model.Entry
+	created, err := s.feeds.IngestRSS(ctx, feed, true, func(entries repository.EntryRepository, id int64) error {
+		dynamicTime := hasDynamicTime(fetched.items)
+		for _, item := range fetched.items {
+			entry := itemToEntry(id, item, dynamicTime)
+			if entry.URL == nil || *entry.URL == "" {
+				continue
+			}
+			if err := entries.CreateOrUpdate(ctx, entry); err != nil {
+				return fmt.Errorf("save initial entry: %w", err)
+			}
+			newEntries = append(newEntries, entry)
+		}
+		return nil
+	})
 	if err != nil {
 		logger.Error("feed create failed", "module", "service", "action", "create", "resource", "feed", "result", "failed", "host", network.ExtractHost(trimmedURL), "error", err)
 		return model.Feed{}, err
@@ -200,21 +214,6 @@ func (s *feedService) Add(ctx context.Context, feedURL string, folderID *int64, 
 			_ = s.feeds.UpdateIconPath(ctx, created.ID, iconPath)
 			created.IconPath = &iconPath
 		}
-	}
-
-	// Save entries from the fetched feed
-	dynamicTime := hasDynamicTime(fetched.items)
-	newEntries := make([]model.Entry, 0, len(fetched.items))
-	for _, item := range fetched.items {
-		entry := itemToEntry(created.ID, item, dynamicTime)
-		if entry.URL == nil || *entry.URL == "" {
-			continue
-		}
-		if err := s.entries.CreateOrUpdate(ctx, entry); err != nil {
-			logger.Warn("entry create failed", "module", "service", "action", "create", "resource", "entry", "result", "failed", "feed_id", created.ID, "feed_title", created.Title, "host", network.ExtractHost(*entry.URL), "error", err)
-			continue
-		}
-		newEntries = append(newEntries, entry)
 	}
 
 	// 规则引擎挂在入库之后：新订阅的第一批条目也要过一遍
@@ -736,8 +735,7 @@ func (s *feedService) UpdateURL(ctx context.Context, id int64, feedURL string) (
 		return model.Feed{}, &FeedURLConflictError{Feed: *existing}
 	}
 
-	feed.URL = trimmed
-	updated, err := s.feeds.Update(ctx, feed)
+	updated, err := s.feeds.UpdateURL(ctx, id, trimmed)
 	if err != nil {
 		logger.Error("feed url update failed", "module", "service", "action", "update", "resource", "feed", "result", "failed", "feed_id", id, "error", err)
 		return model.Feed{}, err

@@ -13,6 +13,7 @@ import (
 
 	"krss/backend/internal/config"
 	"krss/backend/internal/model"
+	"krss/backend/internal/repository"
 	"krss/backend/internal/repository/mock"
 	"krss/backend/internal/service"
 	servicemock "krss/backend/internal/service/mock"
@@ -84,11 +85,11 @@ func TestFeedService_Add_Success(t *testing.T) {
 
 	var createdFeed model.Feed
 	mockFeeds.EXPECT().FindByURL(gomock.Any(), feedURL).Return(nil, nil)
-	mockFeeds.EXPECT().Create(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, feed model.Feed) (model.Feed, error) {
+	mockFeeds.EXPECT().IngestRSS(gomock.Any(), gomock.Any(), true, gomock.Any()).DoAndReturn(
+		func(_ context.Context, feed model.Feed, _ bool, save func(repository.EntryRepository, int64) error) (model.Feed, error) {
 			createdFeed = feed
 			feed.ID = 123
-			return feed, nil
+			return feed, save(mockEntries, feed.ID)
 		},
 	)
 
@@ -212,7 +213,7 @@ func TestFeedService_Add_FetchErrorCreatesFeed(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestFeedService_Add_EntryCreateErrorIgnored(t *testing.T) {
+func TestFeedService_Add_EntryCreateErrorReturned(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -234,10 +235,10 @@ func TestFeedService_Add_EntryCreateErrorIgnored(t *testing.T) {
 	}
 
 	mockFeeds.EXPECT().FindByURL(gomock.Any(), feedURL).Return(nil, nil)
-	mockFeeds.EXPECT().Create(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, feed model.Feed) (model.Feed, error) {
+	mockFeeds.EXPECT().IngestRSS(gomock.Any(), gomock.Any(), true, gomock.Any()).DoAndReturn(
+		func(_ context.Context, feed model.Feed, _ bool, save func(repository.EntryRepository, int64) error) (model.Feed, error) {
 			feed.ID = 123
-			return feed, nil
+			return feed, save(mockEntries, feed.ID)
 		},
 	)
 
@@ -245,9 +246,8 @@ func TestFeedService_Add_EntryCreateErrorIgnored(t *testing.T) {
 
 	clientFactory := network.NewClientFactoryForTest(client)
 	svc := service.NewFeedService(mockFeeds, mockFolders, mockEntries, nil, nil, clientFactory, nil, nil)
-	feed, err := svc.Add(context.Background(), feedURL, nil, "", "article")
-	require.NoError(t, err)
-	require.Equal(t, int64(123), feed.ID)
+	_, err := svc.Add(context.Background(), feedURL, nil, "", "article")
+	require.ErrorContains(t, err, "entry error")
 }
 
 func TestFeedService_Add_IconFetchUpdatesPath(t *testing.T) {
@@ -272,10 +272,10 @@ func TestFeedService_Add_IconFetchUpdatesPath(t *testing.T) {
 	}
 
 	mockFeeds.EXPECT().FindByURL(gomock.Any(), feedURL).Return(nil, nil)
-	mockFeeds.EXPECT().Create(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, feed model.Feed) (model.Feed, error) {
+	mockFeeds.EXPECT().IngestRSS(gomock.Any(), gomock.Any(), true, gomock.Any()).DoAndReturn(
+		func(_ context.Context, feed model.Feed, _ bool, save func(repository.EntryRepository, int64) error) (model.Feed, error) {
 			feed.ID = 123
-			return feed, nil
+			return feed, save(mockEntries, feed.ID)
 		},
 	)
 
@@ -841,7 +841,7 @@ func TestFeedService_Add_CreateError(t *testing.T) {
 	}
 
 	mockFeeds.EXPECT().FindByURL(gomock.Any(), feedURL).Return(nil, nil)
-	mockFeeds.EXPECT().Create(gomock.Any(), gomock.Any()).Return(model.Feed{}, errors.New("create error"))
+	mockFeeds.EXPECT().IngestRSS(gomock.Any(), gomock.Any(), true, gomock.Any()).Return(model.Feed{}, errors.New("create error"))
 
 	clientFactory := network.NewClientFactoryForTest(client)
 	svc := service.NewFeedService(mockFeeds, mockFolders, mockEntries, nil, nil, clientFactory, nil, nil)
@@ -870,11 +870,11 @@ func TestFeedService_Add_TitleOverride(t *testing.T) {
 	}
 
 	mockFeeds.EXPECT().FindByURL(gomock.Any(), feedURL).Return(nil, nil)
-	mockFeeds.EXPECT().Create(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, feed model.Feed) (model.Feed, error) {
+	mockFeeds.EXPECT().IngestRSS(gomock.Any(), gomock.Any(), true, gomock.Any()).DoAndReturn(
+		func(_ context.Context, feed model.Feed, _ bool, save func(repository.EntryRepository, int64) error) (model.Feed, error) {
 			require.Equal(t, "Custom Title", feed.Title)
 			feed.ID = 123
-			return feed, nil
+			return feed, save(mockEntries, feed.ID)
 		},
 	)
 	mockEntries.EXPECT().CreateOrUpdate(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
@@ -1208,10 +1208,10 @@ func TestFeedService_Add_IconFetchError(t *testing.T) {
 	}
 
 	mockFeeds.EXPECT().FindByURL(gomock.Any(), feedURL).Return(nil, nil)
-	mockFeeds.EXPECT().Create(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, feed model.Feed) (model.Feed, error) {
+	mockFeeds.EXPECT().IngestRSS(gomock.Any(), gomock.Any(), true, gomock.Any()).DoAndReturn(
+		func(_ context.Context, feed model.Feed, _ bool, save func(repository.EntryRepository, int64) error) (model.Feed, error) {
 			feed.ID = 123
-			return feed, nil
+			return feed, save(mockEntries, feed.ID)
 		},
 	)
 
@@ -1465,13 +1465,13 @@ func TestFeedService_Add_SameTypeSucceeds(t *testing.T) {
 
 	var createdFeed model.Feed
 	mockFeeds.EXPECT().FindByURL(gomock.Any(), feedURL).Return(nil, nil)
-	mockFeeds.EXPECT().Create(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, feed model.Feed) (model.Feed, error) {
+	mockFeeds.EXPECT().IngestRSS(gomock.Any(), gomock.Any(), true, gomock.Any()).DoAndReturn(
+		func(_ context.Context, feed model.Feed, _ bool, save func(repository.EntryRepository, int64) error) (model.Feed, error) {
 			createdFeed = feed
 			require.Equal(t, "picture", feed.Type)
 			require.Equal(t, &folderID, feed.FolderID)
 			feed.ID = 123
-			return feed, nil
+			return feed, save(mockEntries, feed.ID)
 		},
 	)
 

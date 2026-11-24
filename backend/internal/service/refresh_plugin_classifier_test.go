@@ -75,13 +75,12 @@ func TestRefreshService_ClassifyFetchFailure_UsesPluginChain(t *testing.T) {
 
 	mockFeeds.EXPECT().GetByID(gomock.Any(), int64(9)).Return(feed, nil)
 	var stored *string
-	mockFeeds.EXPECT().UpdateErrorMessage(gomock.Any(), int64(9), gomock.Any()).DoAndReturn(
-		func(_ context.Context, _ int64, msg *string) error {
+	mockFeeds.EXPECT().UpdateRSSRefreshStatus(gomock.Any(), int64(9), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ int64, _ string, msg *string) error {
 			stored = msg
 			return nil
 		},
 	)
-	mockFeeds.EXPECT().RecordRefreshFailure(gomock.Any(), int64(9), gomock.Any()).Return(nil)
 
 	svc := service.NewRefreshService(
 		mockFeeds,
@@ -108,13 +107,12 @@ func TestRefreshService_ClassifyFetchFailure_NoRegistryKeepsOldBehavior(t *testi
 
 	mockFeeds.EXPECT().GetByID(gomock.Any(), int64(10)).Return(feed, nil)
 	var stored *string
-	mockFeeds.EXPECT().UpdateErrorMessage(gomock.Any(), int64(10), gomock.Any()).DoAndReturn(
-		func(_ context.Context, _ int64, msg *string) error {
+	mockFeeds.EXPECT().UpdateRSSRefreshStatus(gomock.Any(), int64(10), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ int64, _ string, msg *string) error {
 			stored = msg
 			return nil
 		},
 	)
-	mockFeeds.EXPECT().RecordRefreshFailure(gomock.Any(), int64(10), gomock.Any()).Return(nil)
 
 	// 不接注册表（nil）：老行为 —— 干巴巴的 HTTP 状态码。
 	svc := service.NewRefreshService(
@@ -142,13 +140,12 @@ func TestRefreshService_ClassifyFetchFailure_DisabledPluginNotConsulted(t *testi
 
 	mockFeeds.EXPECT().GetByID(gomock.Any(), int64(11)).Return(feed, nil)
 	var stored *string
-	mockFeeds.EXPECT().UpdateErrorMessage(gomock.Any(), int64(11), gomock.Any()).DoAndReturn(
-		func(_ context.Context, _ int64, msg *string) error {
+	mockFeeds.EXPECT().UpdateRSSRefreshStatus(gomock.Any(), int64(11), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ int64, _ string, msg *string) error {
 			stored = msg
 			return nil
 		},
 	)
-	mockFeeds.EXPECT().RecordRefreshFailure(gomock.Any(), int64(11), gomock.Any()).Return(nil)
 
 	registry := newClassifierRegistry(t, fakeClassifier{msg: "classified: x"})
 	require.True(t, registry.SetEnabled("fake-classifier", false))

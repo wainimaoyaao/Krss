@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"krss/backend/internal/repository/mock"
 	"krss/backend/internal/model"
+	"krss/backend/internal/repository/mock"
 	"krss/backend/internal/service"
 )
 
@@ -50,7 +50,7 @@ func TestFeedService_UpdateURL_SameFeedNotAConflict(t *testing.T) {
 	feeds.EXPECT().FindByURL(gomock.Any(), "https://new.app/x").Return(&model.Feed{ID: 1, Title: "A", URL: "https://new.app/x"}, nil)
 	updated := source
 	updated.URL = "https://new.app/x"
-	feeds.EXPECT().Update(gomock.Any(), gomock.Any()).Return(updated, nil)
+	feeds.EXPECT().UpdateURL(gomock.Any(), updated.ID, updated.URL).Return(updated, nil)
 
 	got, err := svc.UpdateURL(context.Background(), 1, "https://new.app/x")
 	require.NoError(t, err)

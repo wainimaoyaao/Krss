@@ -229,39 +229,29 @@ func (h *hostRateLimiter) recordRequest(host string) {
 // processParsedFeed handles the common logic after successfully parsing a feed.
 // It clears error messages, updates ETag/LastModified, saves entries, and fetches icons.
 func (s *refreshService) processParsedFeed(ctx context.Context, feed model.Feed, parsed *gofeed.Feed, resp *http.Response) error {
-	// Clear error message on successful refresh
-	feed.ErrorMessage = nil
-	_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, nil)
-
-	// Update feed ETag and LastModified (only update non-empty values)
-	newETag := strings.TrimSpace(resp.Header.Get("ETag"))
-	newLastModified := strings.TrimSpace(resp.Header.Get("Last-Modified"))
-	if newETag != "" || newLastModified != "" {
-		if newETag != "" {
-			feed.ETag = &newETag
-		}
-		if newLastModified != "" {
-			feed.LastModified = &newLastModified
-		}
-		if _, err := s.feeds.Update(ctx, feed); err != nil {
-			logger.Warn("update feed etag failed", "module", "service", "action", "update", "resource", "feed", "result", "failed", "feed_id", feed.ID, "feed_title", feed.Title, "error", err)
-		}
+	feed.ETag = optionalString(resp.Header.Get("ETag"))
+	feed.LastModified = optionalString(resp.Header.Get("Last-Modified"))
+	feed.SiteURL = optionalString(parsed.Link)
+	var newCount, updatedCount int
+	var newEntries []model.Entry
+	committed, err := s.feeds.IngestRSS(ctx, feed, false, func(entries repository.EntryRepository, id int64) error {
+		var saveErr error
+		newCount, updatedCount, newEntries, saveErr = saveEntries(ctx, entries, id, parsed.Items, true)
+		return saveErr
+	})
+	if err != nil {
+		return fmt.Errorf("commit RSS refresh: %w", err)
 	}
-
 	imageURL := ""
 	if parsed.Image != nil {
 		imageURL = strings.TrimSpace(parsed.Image.URL)
 	}
-	s.saveAndPostProcess(ctx, feed, parsed.Items, parsed.Link, imageURL)
+	s.postProcessEntries(ctx, committed, newCount, updatedCount, newEntries, parsed.Link, imageURL)
 	return nil
 }
 
-// saveAndPostProcess 是「抓取分叉点之后」的那一段共用管道：
-// saveEntries（去重 / FTS / 未读）→ 刷新结果记账 → 规则引擎 → siteURL 回填 → 图标。
-// RSS 与 MCP（16 批）两条取数路径最终都汇到这里 —— 所以分叉点在 saveEntries() **之前**，
-// 之后的一切一行没改。
-func (s *refreshService) saveAndPostProcess(ctx context.Context, feed model.Feed, items []*gofeed.Item, siteURL string, imageURL string) {
-	newCount, updatedCount, newEntries := s.saveEntries(ctx, feed.ID, items)
+// Run rules and fetch icons only after the database writes have finished.
+func (s *refreshService) postProcessEntries(ctx context.Context, feed model.Feed, newCount, updatedCount int, newEntries []model.Entry, siteURL, imageURL string) {
 	s.recordFeedResult(RefreshFeedResult{
 		FeedID:   feed.ID,
 		Title:    feed.Title,
@@ -283,15 +273,6 @@ func (s *refreshService) saveAndPostProcess(ctx context.Context, feed model.Feed
 		}
 	}
 
-	// Backfill siteURL if empty (for feeds added before siteURL was implemented)
-	if (feed.SiteURL == nil || *feed.SiteURL == "") && siteURL != "" {
-		newSiteURL := strings.TrimSpace(siteURL)
-		if newSiteURL != "" {
-			_ = s.feeds.UpdateSiteURL(ctx, feed.ID, newSiteURL)
-			feed.SiteURL = &newSiteURL
-		}
-	}
-
 	// 每次刷新都让图标服务重新判断一次：
 	// 1) 没有图标时照旧补一个；
 	// 2) 已有通用 favicon 但插件（如 GitHub 头像）认领了这条订阅时，插件头像会替换它。
@@ -306,7 +287,6 @@ func (s *refreshService) saveAndPostProcess(ctx context.Context, feed model.Feed
 			}
 		}
 	}
-	s.recordFeedSuccess(ctx, feed.ID)
 }
 
 // refreshMCPFeed 是 16 批的取数分叉：MCP 订阅不拉 HTTP、不解析 RSS，
@@ -332,7 +312,9 @@ func (s *refreshService) refreshMCPFeed(ctx context.Context, feed model.Feed) er
 	_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, nil)
 	feed.ErrorMessage = nil
 	// MCP 没有条件请求、也没有站点图标：siteURL / imageURL 留空。
-	s.saveAndPostProcess(ctx, feed, result.Items, "", "")
+	newCount, updatedCount, newEntries, _ := saveEntries(ctx, s.entries, feed.ID, result.Items, false)
+	s.postProcessEntries(ctx, feed, newCount, updatedCount, newEntries, "", "")
+	s.recordFeedSuccess(ctx, feed.ID)
 	logger.Info("mcp feed refreshed", "module", "service", "action", "refresh", "resource", "feed", "result", "ok",
 		"feed_id", feed.ID, "feed_title", feed.Title, "items", len(result.Items), "tier", result.Tier, "key_level", result.KeyLevel)
 	return nil
@@ -345,7 +327,7 @@ func (s *refreshService) refreshMCPFeed(ctx context.Context, feed model.Feed) er
 // 22-4：「更新」只数**内容真变了**的条目 —— 先按「入库会撞到的那一行」把旧值取出来，
 // 比标题/链接/正文/缩略图/作者五项（已读态、发布时间不算：前者刷新不写，后者 COALESCE 本来就保留旧的）。
 // 写还是照写（CreateOrUpdate 原样调，保证 legacy hash 升级与 updated_at 语义不变），变的只是计数口径。
-func (s *refreshService) saveEntries(ctx context.Context, feedID int64, items []*gofeed.Item) (newCount, updatedCount int, newEntries []model.Entry) {
+func saveEntries(ctx context.Context, entries repository.EntryRepository, feedID int64, items []*gofeed.Item, atomic bool) (newCount, updatedCount int, newEntries []model.Entry, saveErr error) {
 	dynamicTime := hasDynamicTime(items)
 	for _, item := range items {
 		entry := itemToEntry(feedID, item, dynamicTime)
@@ -353,13 +335,19 @@ func (s *refreshService) saveEntries(ctx context.Context, feedID int64, items []
 			continue
 		}
 
-		old, err := s.entries.GetExistingEntry(ctx, feedID, entry.Hash, *entry.URL)
+		old, err := entries.GetExistingEntry(ctx, feedID, entry.Hash, *entry.URL)
 		if err != nil {
+			if atomic {
+				return 0, 0, nil, fmt.Errorf("load existing entry: %w", err)
+			}
 			logger.Warn("load existing entry failed", "module", "service", "action", "get", "resource", "entry", "result", "failed", "error", err)
 			continue
 		}
 
-		if err := s.entries.CreateOrUpdate(ctx, entry); err != nil {
+		if err := entries.CreateOrUpdate(ctx, entry); err != nil {
+			if atomic {
+				return 0, 0, nil, fmt.Errorf("save entry: %w", err)
+			}
 			logger.Warn("save entry failed", "module", "service", "action", "save", "resource", "entry", "result", "failed", "error", err)
 			continue
 		}
@@ -839,11 +827,17 @@ func (s *refreshService) refreshFeedWithUA(ctx context.Context, feed model.Feed,
 	return s.refreshFeedWithCookie(ctx, feed, userAgent, "", allowFallback, 0, force)
 }
 
+func (s *refreshService) recordRSSFailure(ctx context.Context, feed model.Feed, message string) {
+	if err := s.feeds.UpdateRSSRefreshStatus(ctx, feed.ID, feed.URL, &message); err != nil && !errors.Is(err, repository.ErrRSSSourceChanged) {
+		logger.Warn("record RSS refresh failure failed", "feed_id", feed.ID, "error", err)
+	}
+}
+
 func (s *refreshService) refreshFeedWithCookie(ctx context.Context, feed model.Feed, userAgent string, cookie string, allowFallback bool, retryCount int, force bool) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feed.URL, nil)
 	if err != nil {
 		errMsg := err.Error()
-		_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
+		s.recordRSSFailure(ctx, feed, errMsg)
 		return err
 	}
 	req.Header.Set("User-Agent", userAgent)
@@ -923,8 +917,7 @@ func (s *refreshService) refreshFeedWithCookie(ctx context.Context, feed model.F
 		if errMsg == "" {
 			errMsg = fetchErr.Error()
 		}
-		_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
-		s.recordFeedFailure(ctx, feed.ID)
+		s.recordRSSFailure(ctx, feed, errMsg)
 		return fetchErr
 	}
 	defer resp.Body.Close()
@@ -932,8 +925,9 @@ func (s *refreshService) refreshFeedWithCookie(ctx context.Context, feed model.F
 	// Not modified, skip parsing but clear any previous error
 	if resp.StatusCode == http.StatusNotModified {
 		logger.Debug("feed not modified", "module", "service", "action", "refresh", "resource", "feed", "result", "skipped", "feed_id", feed.ID, "host", network.ExtractHost(feed.URL))
-		_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, nil)
-		s.recordFeedSuccess(ctx, feed.ID)
+		if err := s.feeds.UpdateRSSRefreshStatus(ctx, feed.ID, feed.URL, nil); err != nil {
+			return err
+		}
 		// 没变更也要出现在刷新明细里（0 新增 / 0 更新）—— 否则结果弹框里会「缺几个源」让人以为漏刷了
 		s.recordFeedResult(RefreshFeedResult{FeedID: feed.ID, Title: feed.Title, IconPath: iconPathOf(feed)})
 		return nil
@@ -960,8 +954,7 @@ func (s *refreshService) refreshFeedWithCookie(ctx context.Context, feed model.F
 		if errMsg == "" {
 			errMsg = fmt.Sprintf("HTTP %d", resp.StatusCode)
 		}
-		_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
-		s.recordFeedFailure(ctx, feed.ID)
+		s.recordRSSFailure(ctx, feed, errMsg)
 		return nil
 	}
 
@@ -969,8 +962,7 @@ func (s *refreshService) refreshFeedWithCookie(ctx context.Context, feed model.F
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		errMsg := err.Error()
-		_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
-		s.recordFeedFailure(ctx, feed.ID)
+		s.recordRSSFailure(ctx, feed, errMsg)
 		return err
 	}
 
@@ -986,23 +978,19 @@ func (s *refreshService) refreshFeedWithCookie(ctx context.Context, feed model.F
 			// Not an Anubis page; keep original parse error handling.
 		case errors.Is(anubisErr, errAnubisRejected):
 			errMsg := "upstream rejected"
-			_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
-			s.recordFeedFailure(ctx, feed.ID)
+			s.recordRSSFailure(ctx, feed, errMsg)
 			return errors.New(errMsg)
 		case errors.Is(anubisErr, errAnubisRetryExceeded):
 			errMsg := fmt.Sprintf("anubis challenge persists after %d retries", retryCount)
-			_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
-			s.recordFeedFailure(ctx, feed.ID)
+			s.recordRSSFailure(ctx, feed, errMsg)
 			return errors.New(errMsg)
 		default:
 			errMsg := fmt.Sprintf("anubis solve failed: %v", anubisErr)
-			_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
-			s.recordFeedFailure(ctx, feed.ID)
+			s.recordRSSFailure(ctx, feed, errMsg)
 			return anubisErr
 		}
 		errMsg := parseErr.Error()
-		_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
-		s.recordFeedFailure(ctx, feed.ID)
+		s.recordRSSFailure(ctx, feed, errMsg)
 		return parseErr
 	}
 
@@ -1014,7 +1002,7 @@ func (s *refreshService) refreshFeedWithFreshClient(ctx context.Context, feed mo
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feed.URL, nil)
 	if err != nil {
 		errMsg := err.Error()
-		_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
+		s.recordRSSFailure(ctx, feed, errMsg)
 		return err
 	}
 	req.Header.Set("User-Agent", userAgent)
@@ -1027,8 +1015,7 @@ func (s *refreshService) refreshFeedWithFreshClient(ctx context.Context, feed mo
 	resp, err := freshClient.Do(req)
 	if err != nil {
 		errMsg := err.Error()
-		_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
-		s.recordFeedFailure(ctx, feed.ID)
+		s.recordRSSFailure(ctx, feed, errMsg)
 		return err
 	}
 	defer resp.Body.Close()
@@ -1044,8 +1031,7 @@ func (s *refreshService) refreshFeedWithFreshClient(ctx context.Context, feed mo
 		if errMsg == "" {
 			errMsg = fmt.Sprintf("HTTP %d", resp.StatusCode)
 		}
-		_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
-		s.recordFeedFailure(ctx, feed.ID)
+		s.recordRSSFailure(ctx, feed, errMsg)
 		return nil
 	}
 
@@ -1053,8 +1039,7 @@ func (s *refreshService) refreshFeedWithFreshClient(ctx context.Context, feed mo
 	if err != nil {
 		logger.Error("feed refresh read failed", "module", "service", "action", "refresh", "resource", "feed", "result", "failed", "feed_id", feed.ID, "feed_title", feed.Title, "error", err)
 		errMsg := err.Error()
-		_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
-		s.recordFeedFailure(ctx, feed.ID)
+		s.recordRSSFailure(ctx, feed, errMsg)
 		return err
 	}
 
@@ -1066,18 +1051,15 @@ func (s *refreshService) refreshFeedWithFreshClient(ctx context.Context, feed mo
 		// Not an Anubis page; continue normal parsing.
 	case errors.Is(anubisErr, errAnubisRejected):
 		errMsg := "upstream rejected"
-		_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
-		s.recordFeedFailure(ctx, feed.ID)
+		s.recordRSSFailure(ctx, feed, errMsg)
 		return errors.New(errMsg)
 	case errors.Is(anubisErr, errAnubisRetryExceeded):
 		errMsg := fmt.Sprintf("anubis challenge persists after %d retries", retryCount)
-		_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
-		s.recordFeedFailure(ctx, feed.ID)
+		s.recordRSSFailure(ctx, feed, errMsg)
 		return errors.New(errMsg)
 	default:
 		errMsg := fmt.Sprintf("anubis solve failed: %v", anubisErr)
-		_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
-		s.recordFeedFailure(ctx, feed.ID)
+		s.recordRSSFailure(ctx, feed, errMsg)
 		return anubisErr
 	}
 
@@ -1085,8 +1067,7 @@ func (s *refreshService) refreshFeedWithFreshClient(ctx context.Context, feed mo
 	parsed, parseErr := parser.Parse(bytes.NewReader(body))
 	if parseErr != nil {
 		errMsg := parseErr.Error()
-		_ = s.feeds.UpdateErrorMessage(ctx, feed.ID, &errMsg)
-		s.recordFeedFailure(ctx, feed.ID)
+		s.recordRSSFailure(ctx, feed, errMsg)
 		return parseErr
 	}
 

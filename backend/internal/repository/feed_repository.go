@@ -21,7 +21,12 @@ type FeedRepository interface {
 	List(ctx context.Context, folderID *int64) ([]model.Feed, error)
 	ListWithoutIcon(ctx context.Context) ([]model.Feed, error)
 	Update(ctx context.Context, feed model.Feed) (model.Feed, error)
+	UpdateURL(ctx context.Context, id int64, url string) (model.Feed, error)
+	// IngestRSS commits the source guard, validators and entries together. The callback uses only transaction-bound repositories.
+	IngestRSS(ctx context.Context, feed model.Feed, create bool, save func(EntryRepository, int64) error) (model.Feed, error)
 	UpdateIconPath(ctx context.Context, id int64, iconPath string) error
+	// UpdateRSSRefreshStatus updates error and backoff only for the fetched URL.
+	UpdateRSSRefreshStatus(ctx context.Context, id int64, url string, message *string) error
 	UpdateErrorMessage(ctx context.Context, id int64, errorMessage *string) error
 	// RecordRefreshFailure 连续失败计数 +1 并打上失败时间（22-4 退避用；SQL 里原子加，不怕并发轮）。
 	RecordRefreshFailure(ctx context.Context, id int64, failedAt time.Time) error
@@ -184,11 +189,9 @@ func (r *feedRepository) Update(ctx context.Context, feed model.Feed) (model.Fee
 	}
 	_, err = r.db.ExecContext(
 		ctx,
-		`UPDATE feeds SET folder_id = ?, title = ?, url = ?, site_url = ?, description = ?, summary_prompt_reminder = ?, auto_translate = ?, auto_summary = ?, reader_mode = ?, proxy_mode = ?, proxy_config = ?, etag = ?, last_modified = ?, error_message = ?, source_type = COALESCE(NULLIF(?, ''), source_type), mcp_config = COALESCE(?, mcp_config), updated_at = ? WHERE id = ?`,
+		`UPDATE feeds SET folder_id = ?, title = ?, description = ?, summary_prompt_reminder = ?, auto_translate = ?, auto_summary = ?, reader_mode = ?, proxy_mode = ?, proxy_config = ?, source_type = COALESCE(NULLIF(?, ''), source_type), mcp_config = COALESCE(?, mcp_config), updated_at = ? WHERE id = ?`,
 		nullableInt64(feed.FolderID),
 		feed.Title,
-		feed.URL,
-		nullableString(feed.SiteURL),
 		nullableString(feed.Description),
 		nullableString(feed.SummaryPromptReminder),
 		nullableBool(feed.AutoTranslate),
@@ -196,9 +199,6 @@ func (r *feedRepository) Update(ctx context.Context, feed model.Feed) (model.Fee
 		nullableBool(feed.ReaderMode),
 		nullableProxyMode(feed.ProxyMode),
 		proxyConfig,
-		nullableString(feed.ETag),
-		nullableString(feed.LastModified),
-		nullableString(feed.ErrorMessage),
 		feedSourceType(feed),
 		nullableString(feed.MCPConfig),
 		formatTime(now),
@@ -207,7 +207,67 @@ func (r *feedRepository) Update(ctx context.Context, feed model.Feed) (model.Fee
 	if err != nil {
 		return model.Feed{}, fmt.Errorf("update feed: %w", err)
 	}
-	feed.UpdatedAt = now
+	return r.GetByID(ctx, feed.ID)
+}
+
+func (r *feedRepository) UpdateURL(ctx context.Context, id int64, url string) (model.Feed, error) {
+	_, err := r.db.ExecContext(ctx, `UPDATE feeds SET url = ?, etag = NULL, last_modified = NULL, updated_at = ? WHERE id = ? AND url <> ?`, url, formatTime(time.Now()), id, url)
+	if err != nil {
+		return model.Feed{}, err
+	}
+	return r.GetByID(ctx, id)
+}
+
+// ErrRSSSourceChanged means the fetched response no longer belongs to the subscription.
+var ErrRSSSourceChanged = errors.New("RSS subscription source changed during refresh")
+
+func (r *feedRepository) IngestRSS(ctx context.Context, feed model.Feed, create bool, save func(EntryRepository, int64) error) (model.Feed, error) {
+	// Take SQLite's writer lock before inspecting or writing entries. A URL
+	// edit either wins before this update or runs after the whole commit.
+	beginner, ok := r.db.(interface {
+		BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
+	})
+	if !ok {
+		return model.Feed{}, errors.New("RSS ingestion requires a transaction-capable database")
+	}
+	tx, err := beginner.BeginTx(ctx, nil)
+	if err != nil {
+		return model.Feed{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	txFeeds := &feedRepository{db: tx}
+	if create {
+		feed, err = txFeeds.Create(ctx, feed)
+		if err != nil {
+			return model.Feed{}, err
+		}
+	} else {
+		result, err := tx.ExecContext(ctx, `UPDATE feeds SET etag = ?, last_modified = ?, error_message = NULL,
+			refresh_fail_count = 0, refresh_last_fail_at = NULL,
+			site_url = COALESCE(NULLIF(site_url, ''), ?), updated_at = ?
+			WHERE id = ? AND url = ? AND source_type = 'rss'`,
+			nullableString(feed.ETag), nullableString(feed.LastModified), nullableString(feed.SiteURL), formatTime(time.Now()), feed.ID, feed.URL)
+		if err != nil {
+			return model.Feed{}, err
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return model.Feed{}, err
+		}
+		if n == 0 {
+			return model.Feed{}, ErrRSSSourceChanged
+		}
+		feed, err = txFeeds.GetByID(ctx, feed.ID)
+		if err != nil {
+			return model.Feed{}, err
+		}
+	}
+	if err := save(NewEntryRepository(tx), feed.ID); err != nil {
+		return model.Feed{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Feed{}, err
+	}
 	return feed, nil
 }
 
@@ -248,6 +308,26 @@ func (r *feedRepository) UpdateSiteURL(ctx context.Context, id int64, siteURL st
 		id,
 	)
 	return err
+}
+
+func (r *feedRepository) UpdateRSSRefreshStatus(ctx context.Context, id int64, url string, message *string) error {
+	now := formatTime(time.Now().UTC())
+	result, err := r.db.ExecContext(ctx, `UPDATE feeds SET error_message = ?, updated_at = ?,
+  refresh_fail_count = CASE WHEN ? IS NULL THEN 0 ELSE refresh_fail_count + 1 END,
+  refresh_last_fail_at = CASE WHEN ? IS NULL THEN NULL ELSE ? END
+  WHERE id = ? AND url = ? AND source_type = 'rss'`,
+		nullableString(message), now, nullableString(message), nullableString(message), now, id, url)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrRSSSourceChanged
+	}
+	return nil
 }
 
 func (r *feedRepository) UpdateErrorMessage(ctx context.Context, id int64, errorMessage *string) error {
