@@ -326,7 +326,13 @@ func (s *refreshService) refreshMCPFeed(ctx context.Context, feed model.Feed) er
 //
 // 22-4：「更新」只数**内容真变了**的条目 —— 先按「入库会撞到的那一行」把旧值取出来，
 // 比标题/链接/正文/缩略图/作者五项（已读态、发布时间不算：前者刷新不写，后者 COALESCE 本来就保留旧的）。
-// 写还是照写（CreateOrUpdate 原样调，保证 legacy hash 升级与 updated_at 语义不变），变的只是计数口径。
+//
+// B8：内容没变就**不写**。原来每轮刷新对所有条目照写一次 UPSERT，实测 200 条未变化的源
+// 一轮就改 200 行、`updated_at` 全部抖动（真变化 0 条）。现在只在这几种情况下落库：
+//   - 新条目（old == nil）；
+//   - 内容五项里有一项变了；
+//   - 旧行的 hash 与这次的不同（legacy 的 URL 派生 hash 升级，需要走 CreateOrUpdate 的原地升级）；
+//   - 旧行缺 published_at 而这次有（COALESCE 回填，跳过去就永远补不上）。
 func saveEntries(ctx context.Context, entries repository.EntryRepository, feedID int64, items []*gofeed.Item, atomic bool) (newCount, updatedCount int, newEntries []model.Entry, saveErr error) {
 	dynamicTime := hasDynamicTime(items)
 	for _, item := range items {
@@ -341,6 +347,10 @@ func saveEntries(ctx context.Context, entries repository.EntryRepository, feedID
 				return 0, 0, nil, fmt.Errorf("load existing entry: %w", err)
 			}
 			logger.Warn("load existing entry failed", "module", "service", "action", "get", "resource", "entry", "result", "failed", "error", err)
+			continue
+		}
+
+		if old != nil && !entryNeedsWrite(*old, entry) {
 			continue
 		}
 
@@ -360,6 +370,17 @@ func saveEntries(ctx context.Context, entries repository.EntryRepository, feedID
 		}
 	}
 	return
+}
+
+// entryNeedsWrite 这一条要不要落库（见 saveEntries 上方的 B8 说明）。
+func entryNeedsWrite(oldEntry, newEntry model.Entry) bool {
+	if oldEntry.Hash != newEntry.Hash {
+		return true // legacy hash 升级要走原地更新
+	}
+	if oldEntry.PublishedAt == nil && newEntry.PublishedAt != nil {
+		return true // 发布时间还等着 COALESCE 回填
+	}
+	return !entryContentEqual(oldEntry, newEntry)
 }
 
 // entryContentEqual 刷新口径下的「内容一样」：入库会重写的五项全等就算没变。
