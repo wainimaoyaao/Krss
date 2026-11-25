@@ -53,4 +53,13 @@ describe("EntryListHeader 返回按钮（52-4）", () => {
     fireEvent.click(button);
     expect(onBack).toHaveBeenCalledTimes(1);
   });
+  it("移动端同时保留侧栏与订阅返回入口", () => {
+    const onMenu = vi.fn();
+    const onBack = vi.fn();
+    render(<EntryListHeader {...baseProps} isMobile onMenuClick={onMenu} onBackFromFeedJump={onBack} />);
+    fireEvent.click(screen.getByRole("button", { name: "actions.show_sidebar" }));
+    fireEvent.click(screen.getByRole("button", { name: "entry.back_to_previous" }));
+    expect(onMenu).toHaveBeenCalledTimes(1);
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
 });
