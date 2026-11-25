@@ -29,6 +29,21 @@ func TestLoad(t *testing.T) {
 	require.Equal(t, "127.0.0.1:6060", cfg.PprofAddr)
 }
 
+func TestLoad_DisablesExternalPprofByDefault(t *testing.T) {
+	os.Setenv("KRSS_PPROF_ADDR", "0.0.0.0:6060")
+	os.Unsetenv("KRSS_PPROF_ALLOW_EXTERNAL")
+	defer os.Unsetenv("KRSS_PPROF_ADDR")
+	require.Empty(t, config.Load().PprofAddr)
+}
+
+func TestLoad_AllowsExternalPprofWithExplicitOptIn(t *testing.T) {
+	os.Setenv("KRSS_PPROF_ADDR", "0.0.0.0:6060")
+	os.Setenv("KRSS_PPROF_ALLOW_EXTERNAL", "true")
+	defer os.Unsetenv("KRSS_PPROF_ADDR")
+	defer os.Unsetenv("KRSS_PPROF_ALLOW_EXTERNAL")
+	require.Equal(t, "0.0.0.0:6060", config.Load().PprofAddr)
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	// Clear env vars
 	os.Unsetenv("KRSS_ADDR")

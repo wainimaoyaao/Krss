@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 )
@@ -61,6 +62,11 @@ func Load() Config {
 	if os.Getenv("KRSS_ENABLE_PPROF") == "true" && pprofAddr == "" {
 		pprofAddr = "127.0.0.1:6060"
 	}
+	// pprof has no application authentication; keep it loopback-only unless
+	// an operator explicitly places it behind a protected reverse proxy.
+	if pprofAddr != "" && os.Getenv("KRSS_PPROF_ALLOW_EXTERNAL") != "true" && !isLoopbackListenAddress(pprofAddr) {
+		pprofAddr = ""
+	}
 
 	return Config{
 		Addr:          addr,
@@ -71,6 +77,18 @@ func Load() Config {
 		EnableSwagger: enableSwagger,
 		PprofAddr:     pprofAddr,
 	}
+}
+
+func isLoopbackListenAddress(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func detectStaticDir() string {
