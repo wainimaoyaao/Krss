@@ -16,6 +16,10 @@ type SettingsRepository interface {
 	Get(ctx context.Context, key string) (*model.Setting, error)
 	Set(ctx context.Context, key, value string) error
 	SetMany(ctx context.Context, values map[string]string) error
+	// SetManyIfEmpty writes all values in one transaction, but only when claimKey
+	// is absent or empty. It reports false without writing anything when another
+	// writer got there first.
+	SetManyIfEmpty(ctx context.Context, claimKey string, values map[string]string) (bool, error)
 	GetByPrefix(ctx context.Context, prefix string) ([]model.Setting, error)
 	Delete(ctx context.Context, key string) error
 	DeleteByPrefix(ctx context.Context, prefix string) (int64, error)
@@ -85,6 +89,58 @@ func (r *settingsRepository) SetMany(ctx context.Context, values map[string]stri
 	}
 
 	return tx.Commit()
+}
+
+// SetManyIfEmpty claims a key and writes the rest of the row atomically.
+// SQLite serialises the write transaction, so concurrent registrations cannot
+// both see an empty claimKey.
+func (r *settingsRepository) SetManyIfEmpty(ctx context.Context, claimKey string, values map[string]string) (bool, error) {
+	claimValue, ok := values[claimKey]
+	if !ok {
+		return false, fmt.Errorf("claim setting %s missing from values", claimKey)
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO settings (key, value, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+		WHERE settings.value = ''
+	`, claimKey, claimValue, now)
+	if err != nil {
+		return false, fmt.Errorf("claim setting %s: %w", claimKey, err)
+	}
+	claimed, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if claimed == 0 {
+		return false, nil
+	}
+
+	for key, value := range values {
+		if key == claimKey {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO settings (key, value, updated_at)
+			VALUES (?, ?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+		`, key, value, now); err != nil {
+			return false, fmt.Errorf("set setting %s: %w", key, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // GetByPrefix retrieves all settings with keys starting with the given prefix.

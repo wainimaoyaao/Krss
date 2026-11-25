@@ -72,6 +72,24 @@ func (s *settingsRepoStub) SetMany(ctx context.Context, values map[string]string
 	return nil
 }
 
+func (s *settingsRepoStub) SetManyIfEmpty(ctx context.Context, claimKey string, values map[string]string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if existing, ok := s.data[claimKey]; ok && existing != "" {
+		return false, nil
+	}
+	for key := range values {
+		if err := s.setErr[key]; err != nil {
+			return false, err
+		}
+	}
+	for key, value := range values {
+		s.data[key] = value
+	}
+	return true, nil
+}
+
 func (s *settingsRepoStub) GetByPrefix(ctx context.Context, prefix string) ([]model.Setting, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

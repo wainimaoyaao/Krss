@@ -127,3 +127,18 @@ func (mr *MockSettingsRepositoryMockRecorder) SetMany(ctx, values any) *gomock.C
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetMany", reflect.TypeOf((*MockSettingsRepository)(nil).SetMany), ctx, values)
 }
+
+// SetManyIfEmpty mocks base method.
+func (m *MockSettingsRepository) SetManyIfEmpty(ctx context.Context, claimKey string, values map[string]string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetManyIfEmpty", ctx, claimKey, values)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetManyIfEmpty indicates an expected call of SetManyIfEmpty.
+func (mr *MockSettingsRepositoryMockRecorder) SetManyIfEmpty(ctx, claimKey, values any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetManyIfEmpty", reflect.TypeOf((*MockSettingsRepository)(nil).SetManyIfEmpty), ctx, claimKey, values)
+}

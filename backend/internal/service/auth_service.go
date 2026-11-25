@@ -155,21 +155,21 @@ func (s *authService) Register(ctx context.Context, username, nickname, email, p
 	}
 	jwtSecretHex := hex.EncodeToString(jwtSecret)
 
-	// Save user info
-	if err := s.repo.Set(ctx, keyUserUsername, username); err != nil {
-		return nil, fmt.Errorf("save username: %w", err)
+	// Save the whole account in one transaction: a half-written account must never
+	// exist, and two concurrent registrations must not both succeed.
+	created, err := s.repo.SetManyIfEmpty(ctx, keyUserUsername, map[string]string{
+		keyUserUsername:     username,
+		keyUserNickname:     nickname,
+		keyUserEmail:        email,
+		keyUserPasswordHash: string(hash),
+		keyUserJWTSecret:    jwtSecretHex,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("save user: %w", err)
 	}
-	if err := s.repo.Set(ctx, keyUserNickname, nickname); err != nil {
-		return nil, fmt.Errorf("save nickname: %w", err)
-	}
-	if err := s.repo.Set(ctx, keyUserEmail, email); err != nil {
-		return nil, fmt.Errorf("save email: %w", err)
-	}
-	if err := s.repo.Set(ctx, keyUserPasswordHash, string(hash)); err != nil {
-		return nil, fmt.Errorf("save password hash: %w", err)
-	}
-	if err := s.repo.Set(ctx, keyUserJWTSecret, jwtSecretHex); err != nil {
-		return nil, fmt.Errorf("save jwt secret: %w", err)
+	if !created {
+		logger.Warn("auth register exists", "module", "service", "action", "create", "resource", "auth", "result", "failed", "actor", username)
+		return nil, ErrUserExists
 	}
 
 	// Generate token and return
@@ -415,20 +415,21 @@ func (s *authService) UpdateProfile(ctx context.Context, nickname, email, curren
 		if err != nil {
 			return nil, fmt.Errorf("hash password: %w", err)
 		}
-		if err := s.repo.Set(ctx, keyUserPasswordHash, string(hash)); err != nil {
-			logger.Warn("auth profile update password failed", "module", "service", "action", "update", "resource", "auth", "result", "failed", "actor", username, "error", err)
-			return nil, fmt.Errorf("update password: %w", err)
-		}
-
 		// Regenerate JWT secret to invalidate all existing tokens
 		newJwtSecret := make([]byte, 32)
 		if _, err := rand.Read(newJwtSecret); err != nil {
 			return nil, fmt.Errorf("generate new jwt secret: %w", err)
 		}
 		jwtSecretHex := hex.EncodeToString(newJwtSecret)
-		if err := s.repo.Set(ctx, keyUserJWTSecret, jwtSecretHex); err != nil {
-			logger.Warn("auth profile update jwt secret failed", "module", "service", "action", "update", "resource", "auth", "result", "failed", "actor", username, "error", err)
-			return nil, fmt.Errorf("update jwt secret: %w", err)
+
+		// Write hash and secret together: a password change that left the old
+		// secret behind would keep tokens the user expects to be revoked alive.
+		if err := s.repo.SetMany(ctx, map[string]string{
+			keyUserPasswordHash: string(hash),
+			keyUserJWTSecret:    jwtSecretHex,
+		}); err != nil {
+			logger.Warn("auth profile update password failed", "module", "service", "action", "update", "resource", "auth", "result", "failed", "actor", username, "error", err)
+			return nil, fmt.Errorf("update password: %w", err)
 		}
 
 		// Generate new token for the user

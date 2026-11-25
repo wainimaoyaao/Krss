@@ -28,6 +28,15 @@ func (m *mapSettingsRepo) SetMany(_ context.Context, values map[string]string) e
 	}
 	return nil
 }
+func (m *mapSettingsRepo) SetManyIfEmpty(_ context.Context, claimKey string, values map[string]string) (bool, error) {
+	if existing, ok := m.data[claimKey]; ok && existing != "" {
+		return false, nil
+	}
+	for k, v := range values {
+		m.data[k] = v
+	}
+	return true, nil
+}
 func (m *mapSettingsRepo) GetByPrefix(_ context.Context, prefix string) ([]model.Setting, error) {
 	out := make([]model.Setting, 0, len(m.data))
 	for k, v := range m.data {

@@ -47,6 +47,18 @@ func (s *sceneSettingsStub) SetMany(_ context.Context, values map[string]string)
 	return nil
 }
 
+func (s *sceneSettingsStub) SetManyIfEmpty(_ context.Context, claimKey string, values map[string]string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.data[claimKey]; ok && existing != "" {
+		return false, nil
+	}
+	for k, v := range values {
+		s.data[k] = v
+	}
+	return true, nil
+}
+
 func (s *sceneSettingsStub) GetByPrefix(_ context.Context, prefix string) ([]model.Setting, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

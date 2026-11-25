@@ -49,6 +49,15 @@ func (s *settingsStub) SetMany(_ context.Context, values map[string]string) erro
 	}
 	return nil
 }
+func (s *settingsStub) SetManyIfEmpty(_ context.Context, claimKey string, values map[string]string) (bool, error) {
+	if existing, ok := s.data[claimKey]; ok && existing.Value != "" {
+		return false, nil
+	}
+	for k, v := range values {
+		s.data[k] = model.Setting{Key: k, Value: v, UpdatedAt: time.Now().UTC()}
+	}
+	return true, nil
+}
 func (s *settingsStub) DeleteByPrefix(_ context.Context, prefix string) (int64, error) {
 	var n int64
 	for k := range s.data {

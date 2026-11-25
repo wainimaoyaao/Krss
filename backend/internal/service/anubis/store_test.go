@@ -68,6 +68,13 @@ func (s *settingsRepoStub) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+func (s *settingsRepoStub) SetManyIfEmpty(ctx context.Context, claimKey string, values map[string]string) (bool, error) {
+	if existing, ok := s.data[claimKey]; ok && existing != "" {
+		return false, nil
+	}
+	return true, s.SetMany(ctx, values)
+}
+
 func (s *settingsRepoStub) GetByPrefix(ctx context.Context, prefix string) ([]model.Setting, error) {
 	settings := make([]model.Setting, 0)
 	for key, val := range s.data {
