@@ -24,7 +24,7 @@
 `docs/dev/发版.md` 发版口径（**每次发版前必读**） · `AGENTS.md` 代码规范。
 
 发版规则（细节见 `docs/dev/发版.md`）：版本号严格 Semantic Versioning 2.0.0（只 `MAJOR.MINOR.PATCH` 三段，禁四段），只改 `frontend/package.json` 与 `backend/internal/config/config.go` 两处；发布说明照 Keep a Changelog 1.1.0（`CHANGELOG.md` 为准，`docs/releases/v<版本>.md` 复制其版本节），**只写更新了什么，不出现批次号/内部编号**。顺序：功能先提交 → bump 版本 + 发布说明 → `git tag v<版本>` → 推 `main` 与 tag。
-Docker 镜像同流程：tag 一推 `release.yml` 同时构建推 `ghcr.io/kue02/krss`（amd64+arm64）；发完必须核对 `:<版本>` 与 `:latest` 同 digest、且与上一版不同，不许只看 CI 绿就报「发版完成」。
+Docker 镜像同流程：`release.yml` 构建 amd64+arm64 并推送到当前 GitHub 仓库对应的 `ghcr.io/<owner>/<repo>`（路径小写；本仓库是 fork，实际推的是 `ghcr.io/wainimaoyaao/krss`，不是上游 kue02）；标签推送没触发时按发版文档从现有标签手动补发；发完必须核对 `:<版本>` 与 `:latest` 同 digest、且与上一版不同，不许只看 CI 绿就报「发版完成」。
 
 ## 三、代码与提交
 
@@ -40,3 +40,17 @@ Docker 镜像同流程：tag 一推 `release.yml` 同时构建推 `ghcr.io/kue02
   - **各树各开各的端口、各用各的库副本，绝不互相干扰**：`:8090` + 真实库只归主树；并行树用 `:8082` 起（一棵一个），库用副本 `data-<名字>`；前端 `KRSS_DEV_BACKEND=http://localhost:808X bun run dev --port 517X`。
   - **各树做完不许自己往 `main` 合并**，合并由用户在主树新开 session、主动指派「合哪棵子树」后才做；口径变了 / 上下文满了要换会话接着干时，**换 session，不换树**（重开树等于白扔已跑通的后端骨架与测试）。
   - 多棵树共同的热点文件（`migrations.go`、`locales/*/common.json`、`api/index.ts`、`types/api.ts`、`hooks/useUISettings.ts`、`AppearanceSettings.tsx`、`index.css`、`refresh_service.go`）请小步提交，便于合并前 rebase。
+
+## Agent skills
+
+### Issue tracker
+
+**本地 Markdown，不是 GitHub Issues**：这个仓库 `has_issues: false`（`gh issue list` 会直接报 `the 'wainimaoyaao/Krss' repository has disabled issues`），需求与任务只落在本机的 `docs/dev/`（`todo.md` 唯一任务清单、`spec-*.md` 规格、`archive/` 已完成批次）。整个 `docs/dev/` 被 `.gitignore` 忽略，不进仓库、不进 PR。See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+triage 五角色（`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`）与 wayfinder 的 `wayfinder:map|research|prototype|grilling|task` 都是 GitHub 标签，**Issues 关闭期间挂不到票上**；本地流程用 `todo.md` 的「未完成 / 待观察 / 待拍板」三段代替分诊。重新开启 Issues 后标签即可复用。See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+single-context：根目录一份 `GLOSSARY.md`，架构决定放 `docs/adr/`。See `docs/agents/domain.md`.
