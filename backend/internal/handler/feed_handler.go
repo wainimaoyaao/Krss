@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -21,7 +22,9 @@ type FeedHandler struct {
 	service        service.FeedService
 	refreshService service.RefreshService
 	// proxySources 解析「这条订阅实际用哪套代理」（14 批）；nil 时响应里不带 effective
-	proxySources service.ProxySourceService
+	proxySources  service.ProxySourceService
+	refreshMu     sync.Mutex
+	refreshActive bool
 }
 
 type createFeedRequest struct {
@@ -817,14 +820,24 @@ type refreshRequest struct {
 // 用户点完刷新再去点条目会看着像卡死。前端本来就是轮询 GET /feeds/refresh 拿
 // isRefreshing/completed 来画进度圈的，所以这里改成后台执行 —— 立刻回 204，
 // 进度与「刷完了」由状态接口报。
+func (h *FeedHandler) tryStartRefresh() bool {
+	h.refreshMu.Lock()
+	defer h.refreshMu.Unlock()
+	if h.refreshActive {
+		return false
+	}
+	h.refreshActive = true
+	return true
+}
+
+func (h *FeedHandler) finishRefresh() {
+	h.refreshMu.Lock()
+	h.refreshActive = false
+	h.refreshMu.Unlock()
+}
+
 func (h *FeedHandler) RefreshAll(c echo.Context) error {
 	ctx := c.Request().Context()
-
-	// 已经在刷了就直说，不用排队等一轮
-	if h.refreshService.IsRefreshing() {
-		logger.Warn("feed refresh skipped", "module", "handler", "action", "refresh", "resource", "feed", "result", "skipped")
-		return c.JSON(http.StatusConflict, errorResponse{Error: "refresh already in progress"})
-	}
 
 	var req refreshRequest
 	if err := c.Bind(&req); err == nil && len(req.FeedIDs) > 0 {
@@ -840,6 +853,9 @@ func (h *FeedHandler) RefreshAll(c echo.Context) error {
 		// 请求一返回 ctx 就被取消，后台任务要用脱离取消的 ctx 跑完这一轮
 		bgCtx := context.WithoutCancel(ctx)
 		forceScope := req.Force || c.QueryParam("force") == "true"
+		if h.refreshService.IsRefreshing() || !h.tryStartRefresh() {
+			return c.JSON(http.StatusConflict, errorResponse{Error: "refresh already in progress"})
+		}
 		go func() {
 			var refreshErr error
 			if forceScope {
@@ -850,6 +866,7 @@ func (h *FeedHandler) RefreshAll(c echo.Context) error {
 			if err := refreshErr; err != nil && !errors.Is(err, service.ErrAlreadyRefreshing) {
 				logger.Error("feed refresh failed", "module", "handler", "action", "refresh", "resource", "feed", "result", "failed", "count", len(ids), "error", err)
 			}
+			h.finishRefresh()
 		}()
 		logger.Info("feed refresh triggered", "module", "handler", "action", "refresh", "resource", "feed", "result", "ok", "scope", "partial", "count", len(ids))
 		return c.NoContent(http.StatusNoContent)
@@ -858,6 +875,9 @@ func (h *FeedHandler) RefreshAll(c echo.Context) error {
 	// 强制拉取：忽略条件请求与同主机冷却（用户 11-19），走同一条后台执行路径
 	force := req.Force || c.QueryParam("force") == "true"
 	bgCtx := context.WithoutCancel(ctx)
+	if h.refreshService.IsRefreshing() || !h.tryStartRefresh() {
+		return c.JSON(http.StatusConflict, errorResponse{Error: "refresh already in progress"})
+	}
 	go func() {
 		var err error
 		if force {
@@ -868,6 +888,7 @@ func (h *FeedHandler) RefreshAll(c echo.Context) error {
 		if err != nil && !errors.Is(err, service.ErrAlreadyRefreshing) {
 			logger.Error("feed refresh failed", "module", "handler", "action", "refresh", "resource", "feed", "result", "failed", "error", err)
 		}
+		h.finishRefresh()
 	}()
 	logger.Info("feed refresh triggered", "module", "handler", "action", "refresh", "resource", "feed", "result", "ok", "force", force)
 	return c.NoContent(http.StatusNoContent)

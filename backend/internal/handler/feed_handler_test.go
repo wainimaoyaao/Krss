@@ -184,7 +184,7 @@ func TestFeedHandler_Update_EmptyTitleRestoresDefault(t *testing.T) {
 
 	e := newTestEcho()
 	req := newJSONRequest(http.MethodPut, "/feeds/123", map[string]interface{}{
-		"title": "   ",
+		"title":                 "   ",
 		"summaryPromptReminder": "突出结论",
 	})
 	c, rec := newTestContext(e, req)
@@ -324,6 +324,37 @@ func TestFeedHandler_RefreshAll_Success(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("后台刷新没有被触发")
 	}
+}
+
+func TestFeedHandler_RefreshAll_ConcurrentRequestsAdmitOnlyOne(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockService := mock.NewMockFeedService(ctrl)
+	mockRefreshService := mock.NewMockRefreshService(ctrl)
+	h := handler.NewFeedHandlerHelper(mockService, mockRefreshService)
+	mockRefreshService.EXPECT().IsRefreshing().Return(false).AnyTimes()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	mockRefreshService.EXPECT().RefreshAll(gomock.Any()).DoAndReturn(func(context.Context) error {
+		close(started)
+		<-release
+		return nil
+	}).Times(1)
+
+	e := newTestEcho()
+	firstReq := newJSONRequest(http.MethodPost, "/feeds/refresh", nil)
+	firstCtx, firstRec := newTestContext(e, firstReq)
+	done := make(chan error, 1)
+	go func() { done <- h.RefreshAll(firstCtx) }()
+	<-started
+
+	secondReq := newJSONRequest(http.MethodPost, "/feeds/refresh", nil)
+	secondCtx, secondRec := newTestContext(e, secondReq)
+	require.NoError(t, h.RefreshAll(secondCtx))
+	require.Equal(t, http.StatusConflict, secondRec.Code)
+	release <- struct{}{}
+	require.NoError(t, <-done)
+	require.Equal(t, http.StatusNoContent, firstRec.Code)
 }
 
 func TestFeedHandler_RefreshAll_AlreadyRefreshing(t *testing.T) {
