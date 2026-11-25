@@ -238,8 +238,6 @@ export interface MCPOutboundStatus {
   /** 允许写操作（mark_read / star_entry），默认关 */
   writeEnabled: boolean;
   tokenSet: boolean;
-  /** 明文 Token（17-2：可重复查看复制；存量哈希没有明文可回时为空） */
-  token?: string;
   tokenPrefix?: string;
   tokenCreatedAt?: string;
   /** 对外访问地址（用户填；空 = 没填，示例回落到浏览器当前 origin） */
@@ -250,7 +248,7 @@ export interface MCPOutboundStatus {
   resourceCount: number;
 }
 
-/** POST /api/mcp/outbound/token —— 明文 Token（17-2：存库可重复查看，不是一次性） */
+/** POST /api/mcp/outbound/token —— 仅生成时返回明文 Token */
 export interface MCPOutboundTokenResponse extends MCPOutboundStatus {
   token: string;
 }

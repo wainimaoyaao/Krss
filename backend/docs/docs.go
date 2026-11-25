@@ -6332,7 +6332,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tokenSet": {
-                    "description": "TokenSet 是否有可用 Token；Token 是明文库里那份原文（可重复查看复制，17-2）。\n存量哈希没有明文可回 → Token 为空，界面提示点一次「重新生成」。",
+                    "description": "TokenSet 是否有可用令牌。",
                     "type": "boolean"
                 },
                 "toolCount": {
@@ -7663,9 +7663,6 @@ const docTemplate = `{
                 "resourceCount": {
                     "type": "integer"
                 },
-                "token": {
-                    "type": "string"
-                },
                 "tokenCreatedAt": {
                     "type": "string"
                 },
@@ -7673,7 +7670,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tokenSet": {
-                    "description": "TokenSet 是否有可用 Token；Token 是明文库里那份原文（可重复查看复制，17-2）。\n存量哈希没有明文可回 → Token 为空，界面提示点一次「重新生成」。",
+                    "description": "TokenSet 是否有可用令牌。",
                     "type": "boolean"
                 },
                 "toolCount": {

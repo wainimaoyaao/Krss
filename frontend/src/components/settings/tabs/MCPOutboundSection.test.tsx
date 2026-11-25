@@ -78,29 +78,27 @@ describe("出向：Krss 作为 MCP 服务器（设置 → 数据控制）", () =
     expect(screen.getByText("data_control.mcp_token_not_set")).toBeTruthy();
   });
 
-  it("生成 Token 后明文常驻显示 + 可复制；时间本地化，不再显示 raw UTC", async () => {
+  it("生成后显示一次，重新打开仅显示元数据", async () => {
     mocks.createMCPOutboundToken.mockResolvedValue({
       ...status({
         tokenSet: true,
-        token: "krss_mcp_persistent_plaintext",
         tokenPrefix: "krss_mcp_ab12",
         tokenCreatedAt: "2026-09-18T10:00:00Z",
       }),
       token: "krss_mcp_persistent_plaintext",
     });
 
-    render(<MCPOutboundSection />);
+    const { unmount } = render(<MCPOutboundSection />);
     await screen.findByText("data_control.mcp_token_generate");
 
     fireEvent.click(screen.getByText("data_control.mcp_token_generate"));
 
-    // 明文常驻（不是一次性）：code 块 + 复制按钮，一次性警告没了
     expect(
       await screen.findByText("krss_mcp_persistent_plaintext"),
     ).toBeTruthy();
     expect(
-      screen.queryByText("data_control.mcp_token_once_warning"),
-    ).toBeNull();
+      screen.getByText("data_control.mcp_token_once_warning"),
+    ).toBeTruthy();
     expect(
       screen.getAllByText("data_control.mcp_token_copy").length,
     ).toBeGreaterThanOrEqual(1);
@@ -111,9 +109,16 @@ describe("出向：Krss 作为 MCP 服务器（设置 → 数据控制）", () =
     expect(screen.queryByText("data_control.mcp_token_not_set")).toBeNull();
     expect(screen.getByText("data_control.mcp_token_regenerate")).toBeTruthy();
     expect(screen.getByText("data_control.mcp_token_revoke")).toBeTruthy();
+
+    unmount();
+    mocks.getMCPOutbound.mockResolvedValue(status({ tokenSet: true, tokenPrefix: "krss_mcp_ab12" }));
+    render(<MCPOutboundSection />);
+    await screen.findByText("krss_mcp_ab12");
+    expect(screen.queryByText(/krss_mcp_persistent_plaintext/)).toBeNull();
+    expect(screen.getByText(/Bearer <token>/)).toBeTruthy();
   });
 
-  it("存量哈希：明文不可回显，给重生成提示", async () => {
+  it("已配置时只显示元数据和管理入口", async () => {
     mocks.getMCPOutbound.mockResolvedValue(
       status({
         tokenSet: true,
@@ -126,7 +131,7 @@ describe("出向：Krss 作为 MCP 服务器（设置 → 数据控制）", () =
     await screen.findByText("/mcp");
 
     expect(
-      await screen.findByText("data_control.mcp_token_legacy_hint"),
+      await screen.findByText("data_control.mcp_token_hidden_hint"),
     ).toBeTruthy();
     expect(screen.getByText("data_control.mcp_token_regenerate")).toBeTruthy();
   });
@@ -167,7 +172,7 @@ describe("出向：Krss 作为 MCP 服务器（设置 → 数据控制）", () =
     expect(screen.getByText(/mcpServers/)).toBeTruthy();
 
     mocks.createMCPOutboundToken.mockResolvedValue({
-      ...status({ tokenSet: true, token: "krss_mcp_real_token_in_example" }),
+      ...status({ tokenSet: true }),
       token: "krss_mcp_real_token_in_example",
     });
     fireEvent.click(screen.getByText("data_control.mcp_token_generate"));

@@ -66,7 +66,7 @@ func TestOutbound_StatusDefaultsReadOnly(t *testing.T) {
 }
 
 func TestOutbound_TokenLifecycle(t *testing.T) {
-	outbound, _ := newOutboundFixture(t)
+	outbound, fixture := newOutboundFixture(t)
 	ctx := context.Background()
 
 	status, token, err := outbound.GenerateToken(ctx)
@@ -75,8 +75,17 @@ func TestOutbound_TokenLifecycle(t *testing.T) {
 	require.True(t, strings.HasPrefix(token, service.MCPTokenPrefix))
 	require.True(t, strings.HasPrefix(status.TokenPrefix, service.MCPTokenPrefix))
 
-	// 17-2 返工：明文存库 —— 状态里直接回显完整 Token，可重复查看复制
-	require.Equal(t, token, status.Token)
+	plain, err := fixture.settings.Get(ctx, "mcp.outbound_token")
+	require.NoError(t, err)
+	require.Nil(t, plain)
+	digest, err := fixture.settings.Get(ctx, "mcp.outbound_token_hash")
+	require.NoError(t, err)
+	require.NotNil(t, digest)
+	sum := sha256.Sum256([]byte(token))
+	require.Equal(t, hex.EncodeToString(sum[:]), digest.Value)
+	encoded, err := json.Marshal(status)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), `"token":`)
 
 	require.True(t, outbound.Authorize(ctx, token))
 	require.False(t, outbound.Authorize(ctx, token+"x"))
@@ -95,8 +104,7 @@ func TestOutbound_RegenerateInvalidatesOldToken(t *testing.T) {
 	status, newToken, err := outbound.GenerateToken(ctx)
 	require.NoError(t, err)
 	require.NotEqual(t, oldToken, newToken)
-	// 状态里回显的就是当前这份明文
-	require.Equal(t, newToken, status.Token)
+	require.True(t, strings.HasPrefix(newToken, status.TokenPrefix))
 	require.False(t, outbound.Authorize(ctx, oldToken))
 	require.True(t, outbound.Authorize(ctx, newToken))
 }
@@ -120,11 +128,10 @@ func TestOutbound_LegacyHashTransitionalAuth(t *testing.T) {
 	status, err := outbound.Status(ctx)
 	require.NoError(t, err)
 	require.True(t, status.TokenSet)
-	require.Empty(t, status.Token, "存量哈希没有明文可回显")
 
 	newStatus, newToken, err := outbound.GenerateToken(ctx)
 	require.NoError(t, err)
-	require.Equal(t, newToken, newStatus.Token)
+	require.True(t, strings.HasPrefix(newToken, newStatus.TokenPrefix))
 	require.False(t, outbound.Authorize(ctx, legacyToken), "重新生成后旧 Token 立刻失效")
 	require.True(t, outbound.Authorize(ctx, newToken))
 }

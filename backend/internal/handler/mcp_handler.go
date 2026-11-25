@@ -611,6 +611,7 @@ func (h *MCPHandler) GenerateOutboundToken(c echo.Context) error {
 		return writeMCPError(c, err)
 	}
 	logger.Info("mcp outbound token generated", "module", "handler", "action", "create", "resource", "mcp_token", "result", "ok")
+	c.Response().Header().Set("Cache-Control", "no-store")
 	return c.JSON(http.StatusOK, mcpTokenResponse{MCPOutboundStatus: status, Token: token})
 }
 

@@ -1,6 +1,8 @@
 package db
 
 import (
+	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -696,7 +698,44 @@ func runMigrations(db *sql.DB) error {
 		return err
 	}
 
+	// Migration 39: 保留已配置客户端的令牌，同时删除 settings 中的明文副本。
+	if err := migrateMCPOutboundToken(db); err != nil {
+		return fmt.Errorf("migrate MCP outbound token: %w", err)
+	}
+
 	return nil
+}
+
+// No version marker is needed: deleting the source key makes this idempotent.
+func migrateMCPOutboundToken(db *sql.DB) error {
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var token, updatedAt string
+	err = tx.QueryRowContext(ctx, `SELECT value, updated_at FROM settings WHERE key = 'mcp.outbound_token'`).Scan(&token, &updatedAt)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if token != "" {
+		// The previous authenticator preferred plaintext when both keys existed.
+		digest := fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
+		if _, err := tx.ExecContext(ctx, `INSERT INTO settings (key, value, updated_at)
+			VALUES ('mcp.outbound_token_hash', ?, ?)
+			ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, digest, updatedAt); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM settings WHERE key = 'mcp.outbound_token'`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // migrateRemoveDemoPlugin 清掉 Demo 样板插件的残留（迁移 35），只执行一次。

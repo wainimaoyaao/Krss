@@ -19,13 +19,14 @@ import { MCPJsonView } from "./MCPJsonView";
 /**
  * 设置 → 数据控制里的出向段：「Krss 作为 MCP 服务器」（方案 §五 / B4 拍板放这个页）。
  *
- * 三块：启用开关（含「允许写操作」）、长期 Token（17-2：明文存库、可重复查看复制）、
- * 一段可直接复制的 MCP 客户端配置示例（复制即用，Token 已填好）。
+ * 三块：启用开关（含「允许写操作」）、长期 Token（明文只在生成后显示）、
+ * 一段可直接复制的 MCP 客户端配置示例（生成后自动填入 Token）。
  */
 export function MCPOutboundSection() {
   const { t } = useTranslation();
 
   const [status, setStatus] = useState<MCPOutboundStatus | null>(null);
+  const [issuedToken, setIssuedToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -64,8 +65,8 @@ export function MCPOutboundSection() {
       status?.baseUrl?.trim() ||
       (typeof window === "undefined" ? undefined : window.location.origin);
     // 17-5：复制即用 —— 有真 Token 直接填进去
-    return buildMCPClientConfigExample(origin, exampleTransport, status?.token);
-  }, [exampleTransport, status?.baseUrl, status?.token]);
+    return buildMCPClientConfigExample(origin, exampleTransport, issuedToken ?? undefined);
+  }, [exampleTransport, status?.baseUrl, issuedToken]);
 
   const saveConfig = useCallback(
     async (
@@ -103,8 +104,9 @@ export function MCPOutboundSection() {
     setIsGenerating(true);
     setActionError(null);
     try {
-      // 17-2：明文存库 —— 返回的状态里直接带明文，常驻显示
-      setStatus(await createMCPOutboundToken());
+      const { token, ...nextStatus } = await createMCPOutboundToken();
+      setStatus(nextStatus);
+      setIssuedToken(token);
     } catch (err) {
       setActionError(
         err instanceof Error
@@ -121,6 +123,7 @@ export function MCPOutboundSection() {
     setActionError(null);
     try {
       await revokeMCPOutboundToken();
+      setIssuedToken(null);
       setConfirmRevoke(false);
       await load();
     } catch (err) {
@@ -209,7 +212,7 @@ export function MCPOutboundSection() {
               <HeroSwitch
                 aria-label={t("data_control.mcp_enable")}
                 isSelected={status.enabled}
-                isDisabled={isSaving}
+                isDisabled={isSaving || isGenerating || isRevoking}
                 onChange={(checked: boolean) =>
                   void saveConfig({ enabled: checked })
                 }
@@ -229,7 +232,7 @@ export function MCPOutboundSection() {
               <HeroSwitch
                 aria-label={t("data_control.mcp_allow_write")}
                 isSelected={status.writeEnabled}
-                isDisabled={isSaving || !status.enabled}
+                isDisabled={isSaving || isGenerating || isRevoking || !status.enabled}
                 onChange={(checked: boolean) =>
                   void saveConfig({ writeEnabled: checked })
                 }
@@ -278,7 +281,7 @@ export function MCPOutboundSection() {
               </div>
             </div>
 
-            {/* 长期 Token（17-2：明文存库，常驻显示 + 随时复制） */}
+            {/* 长期 Token */}
             <div className="space-y-2 rounded-lg border border-border px-3 py-3">
               <div className="text-sm font-medium">
                 {t("data_control.mcp_token_title")}
@@ -291,7 +294,7 @@ export function MCPOutboundSection() {
                   </div>
                   <Button
                     size="sm"
-                    isDisabled={isGenerating}
+                    isDisabled={isGenerating || isSaving || isRevoking}
                     onPress={() => void handleGenerateToken()}
                   >
                     {isGenerating
@@ -301,28 +304,38 @@ export function MCPOutboundSection() {
                 </div>
               )}
 
-              {/* 明文常驻：显示 + 复制 + 重新生成 + 撤销 */}
-              {status.tokenSet && status.token && (
+              {status.tokenSet && (
                 <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <code className="min-w-[12rem] flex-1 break-all rounded-md bg-secondary px-2 py-1.5 font-mono text-xs text-foreground">
-                      {status.token}
-                    </code>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onPress={() =>
-                        void copyToClipboard(
-                          status.token ?? "",
-                          t("data_control.mcp_token_copied"),
-                          t("actions.copy_failed"),
-                        )
-                      }
-                    >
-                      <Copy className="size-3.5" />
-                      {t("data_control.mcp_token_copy")}
-                    </Button>
-                  </div>
+                  {issuedToken ? (
+                    <>
+                      <div className="text-xs text-muted-foreground">
+                        {t("data_control.mcp_token_once_warning")}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <code className="min-w-[12rem] flex-1 break-all rounded-md bg-secondary px-2 py-1.5 font-mono text-xs text-foreground">
+                          {issuedToken}
+                        </code>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onPress={() =>
+                            void copyToClipboard(
+                              issuedToken,
+                              t("data_control.mcp_token_copied"),
+                              t("actions.copy_failed"),
+                            )
+                          }
+                        >
+                          <Copy className="size-3.5" />
+                          {t("data_control.mcp_token_copy")}
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-xs text-muted-foreground">
+                      {t("data_control.mcp_token_hidden_hint")}
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs text-muted-foreground">
                       {t("data_control.mcp_token_prefix")}
@@ -341,7 +354,7 @@ export function MCPOutboundSection() {
                     <Button
                       size="sm"
                       variant="outline"
-                      isDisabled={isGenerating}
+                      isDisabled={isGenerating || isSaving || isRevoking}
                       onPress={() => void handleGenerateToken()}
                     >
                       {t("data_control.mcp_token_regenerate")}
@@ -358,32 +371,6 @@ export function MCPOutboundSection() {
                 </div>
               )}
 
-              {/* 存量哈希：明文不可回显，点一次重新生成即可 */}
-              {status.tokenSet && !status.token && (
-                <div className="space-y-2">
-                  <div className="rounded-md border-l-2 border-amber-500 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                    {t("data_control.mcp_token_legacy_hint")}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      isDisabled={isGenerating}
-                      onPress={() => void handleGenerateToken()}
-                    >
-                      {t("data_control.mcp_token_regenerate")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      isDisabled={isRevoking}
-                      onPress={() => setConfirmRevoke(true)}
-                    >
-                      {t("data_control.mcp_token_revoke")}
-                    </Button>
-                  </div>
-                </div>
-              )}
             </div>
 
             {actionError && (
