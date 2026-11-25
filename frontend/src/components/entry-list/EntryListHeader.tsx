@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ToggleButton } from "@heroui/react";
+import { Button, ToggleButton } from "@heroui/react";
 import {
   Filter,
   GalleryHorizontalEnd,
@@ -167,16 +167,19 @@ export function EntryListHeader({
             >
               <MenuIcon className="size-5" />
             </button>
-          ) : onBackFromFeedJump ? (
-            <button
+          ) : null}
+          {onBackFromFeedJump && (
+            <Button
+              isIconOnly
+              variant="ghost"
               type="button"
-              onClick={onBackFromFeedJump}
+              onPress={onBackFromFeedJump}
               aria-label={t("entry.back_to_previous")}
               className="-ml-1.5 flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors active:bg-item-hover"
             >
               <BackIcon className="size-5" />
-            </button>
-          ) : null}
+            </Button>
+          )}
 
           <div className="min-w-0 flex-1 px-0.5">
             <div className="flex items-center gap-1.5">
