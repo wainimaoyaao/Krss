@@ -4,7 +4,16 @@ on:
   push:
     tags:
       # 只接受三段 SemVer tag（vMAJOR.MINOR.PATCH）；四段版本不是合法 SemVer。
-      - "v[0-9]+.[0-9]+.[0-9]+"
+      # 用 Actions 的 glob 语法（* 匹配任意串），不要写正则 —— 之前这里是
+      # "v[0-9]+.[0-9]+.[0-9]+"，把正则塞进 glob 字段，靠 + 的「前一字符一个或多个」
+      # 才勉强匹配上，换人改就容易废（2026-11-25 v1.2.1 排查时定位到）。
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要补发的版本 tag（例如 v1.2.1）；留空则用触发这次运行的 ref"
+        required: false
+        default: ""
 
 env:
   REGISTRY: ghcr.io
@@ -20,6 +29,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          # 手动补发（workflow_dispatch）从 main 触发时，签出的仍必须是被发布的那个 tag
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -48,6 +60,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          # 手动补发（workflow_dispatch）从 main 触发时，签出的仍必须是被发布的那个 tag
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -83,6 +98,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          # 手动补发（workflow_dispatch）从 main 触发时，签出的仍必须是被发布的那个 tag
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -135,6 +153,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          # 手动补发（workflow_dispatch）从 main 触发时，签出的仍必须是被发布的那个 tag
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Download digests
         uses: actions/download-artifact@v8
@@ -156,10 +177,16 @@ jobs:
       - name: Extract version from tag
         id: version
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          # 手动补发时 ref 是 main，版本号只能从输入拿；tag 推送时两者等价
+          RELEASE_TAG="${{ inputs.tag }}"
+          if [ -z "$RELEASE_TAG" ]; then
+            RELEASE_TAG="$GITHUB_REF_NAME"
+          fi
+          VERSION=${RELEASE_TAG#v}
           MAJOR=$(echo "$VERSION" | cut -d. -f1)
           MINOR=$(echo "$VERSION" | cut -d. -f1-2)
           IMAGE_NAME_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "tag=${RELEASE_TAG}" >> $GITHUB_OUTPUT
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "major=${MAJOR}" >> $GITHUB_OUTPUT
           echo "minor=${MINOR}" >> $GITHUB_OUTPUT
@@ -187,16 +214,17 @@ jobs:
           # 于是每次都回落到自动生成的提交历史）。
           # 文件名带 v 前缀（docs/releases/v1.1.1.md），而 version 输出已剥掉 v。
           VERSION="${{ steps.version.outputs.version }}"
+          RELEASE_TAG="${{ steps.version.outputs.tag }}"
           NOTES="docs/releases/v${VERSION}.md"
           if [ -s "$NOTES" ]; then
             # 人工撰写的分类更新说明（docs/releases/vX.Y.Z.md）；缺失时回落到自动生成
-            gh release create "$GITHUB_REF_NAME" \
+            gh release create "$RELEASE_TAG" \
               --repo "${{ github.repository }}" \
-              --title "$GITHUB_REF_NAME" \
+              --title "$RELEASE_TAG" \
               --notes-file "$NOTES"
           else
-            gh release create "$GITHUB_REF_NAME" \
+            gh release create "$RELEASE_TAG" \
               --repo "${{ github.repository }}" \
-              --title "$GITHUB_REF_NAME" \
+              --title "$RELEASE_TAG" \
               --generate-notes
           fi
