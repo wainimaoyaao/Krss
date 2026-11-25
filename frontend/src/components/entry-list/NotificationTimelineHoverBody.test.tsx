@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render } from "@testing-library/react";
 import gsap from "gsap";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -16,6 +16,27 @@ import { resetDeferredRemovals } from "./deferred-removal";
  * 浮块语义：hoverMode 下常挂（无 key、不卸载），无悬停时
  * `data-preview-visible="false"` 藏起；换条目只换 entry，DOM 节点不变。
  */
+
+/**
+ * F4：浮块里的正文现在懒加载（`ArticleContent` 单独成 chunk）。假定时器下首次解析
+ * 动态 import 不会自己跑完，所以先在 beforeAll 里把它预热进模块表。
+ */
+beforeAll(async () => {
+  await import("@/components/ui/article-content");
+});
+
+/**
+ * F4：浮块里的正文现在懒加载（`ArticleContent` 单独成 chunk）。假定时器下 RTL 的
+ * waitFor 不推进微任务队列，所以这里显式把动态 import 的 promise 冲刷掉再断言。
+ */
+async function flushLazyBody() {
+  // `advanceTimersByTimeAsync` 会在推进假定时器的同时把微任务队列跑空 ——
+  // 动态 import 的 promise 与 React 的重渲都靠它冲出来。
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+  });
+}
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -236,12 +257,13 @@ describe("通知视图 · 悬停正文档", () => {
     expect(isFloatVisible(float)).toBe(false);
   });
 
-  it("悬浮卡片 → 浮块带标题与正文；移出 250ms 才藏；这期间进浮块就不藏", () => {
+  it("悬浮卡片 → 浮块带标题与正文；移出 250ms 才藏；这期间进浮块就不藏", async () => {
     const { container } = renderTimeline([entry("a", 14, 10)], {
       bodyOnHover: true,
     });
     const card = cardOf(container);
     fireEvent.mouseEnter(card);
+    await flushLazyBody();
 
     const float = floatOf(container);
     expect(float).not.toBeNull();
@@ -276,7 +298,7 @@ describe("通知视图 · 悬停正文档", () => {
     expect(isFloatVisible(hidden)).toBe(false);
   });
 
-  it("换条目不重新挂载：同一个 DOM 节点，data-preview-entry 跟着变", () => {
+  it("换条目不重新挂载：同一个 DOM 节点，data-preview-entry 跟着变", async () => {
     const { container } = renderTimeline(
       [entry("a", 14, 10), entry("b", 14, 20)],
       { bodyOnHover: true },
@@ -296,6 +318,7 @@ describe("通知视图 · 悬停正文档", () => {
     expect(cardB).toBeDefined();
 
     fireEvent.mouseEnter(cardA!);
+    await flushLazyBody();
     const first = floatOf(container);
     expect(first).not.toBeNull();
     expect(isFloatVisible(first)).toBe(true);

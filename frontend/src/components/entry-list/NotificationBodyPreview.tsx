@@ -1,7 +1,11 @@
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import gsap from "gsap";
-import { ArticleContent } from "@/components/ui/article-content";
+/** F4：悬停浮块里的正文同样懒加载（理由见 EntryListItem 那处注释）。 */
+const ArticleContent = lazy(async () => {
+  const module = await import("@/components/ui/article-content");
+  return { default: module.ArticleContent };
+});
 import { useTranslationStore } from "@/stores/translation-store";
 import { MachineTranslatedBadge } from "./machine-translated-badge";
 import type { Entry, Feed } from "@/types/api";
@@ -76,10 +80,10 @@ function placeBesidePointer(
   let left = x + GAP;
   if (left + w > vw - 8) left = x - GAP - w;
   // 竖直：指针下方，但至少落到卡片下沿之下 —— 标题永远不被遮
-  let top =
-    cardBottom !== null ? Math.max(y + GAP, cardBottom + 12) : y + GAP;
+  let top = cardBottom !== null ? Math.max(y + GAP, cardBottom + 12) : y + GAP;
   if (top + h > vh - 8) {
-    const above = cardTop !== null ? cardTop - 12 - h : Number.NEGATIVE_INFINITY;
+    const above =
+      cardTop !== null ? cardTop - 12 - h : Number.NEGATIVE_INFINITY;
     top = above >= 8 ? above : vh - h - 8;
   }
   left = Math.min(Math.max(left, 8), Math.max(vw - w - 8, 8));
@@ -102,7 +106,12 @@ export function NotificationBodyPreview({
   entry: Entry | null;
   visible: boolean;
   /** 进入卡片时的指针坐标 + 该卡片的上下沿（首帧落点兜底；卡片沿用于「不许盖住标题」） */
-  anchor: { x: number; y: number; cardTop: number | null; cardBottom: number | null };
+  anchor: {
+    x: number;
+    y: number;
+    cardTop: number | null;
+    cardBottom: number | null;
+  };
   feedName: string;
   /** 订阅级 autoTranslate 覆盖（54-7：读数门与取数门必须同一口径） */
   feed?: Feed;
@@ -128,8 +137,8 @@ export function NotificationBodyPreview({
   // 阅读模式把译文写到 `${language}:readability` 槽，这里回退到可读槽（reviewer P2-1）。
   const translation = useTranslationStore((state) =>
     entry && targetLanguage
-      ? state.getTranslation(entry.id, targetLanguage) ??
-        state.getTranslation(entry.id, targetLanguage, true)
+      ? (state.getTranslation(entry.id, targetLanguage) ??
+        state.getTranslation(entry.id, targetLanguage, true))
       : undefined,
   );
   // REQ3：正文三态状态（翻译中 / 失败 / 完成）——与卡片同一份 store
@@ -141,7 +150,7 @@ export function NotificationBodyPreview({
   const contentStatus = translationStatus?.content;
   const contentBadgeState = translation?.content
     ? "done"
-    : contentStatus?.state ?? null;
+    : (contentStatus?.state ?? null);
   const aiSummaryStatus = useTranslationStore((state) =>
     entry && targetLanguage
       ? state.getSummaryStatus?.(entry.id, targetLanguage)
@@ -328,7 +337,12 @@ export function NotificationBodyPreview({
             data-preview-body=""
             className="entry-content reading-prose prose prose-sm dark:prose-invert mt-2 min-h-0 max-w-none flex-1 overflow-y-auto break-words"
           >
-            <ArticleContent content={previewContent} articleUrl={entry?.url} />
+            <Suspense fallback={null}>
+              <ArticleContent
+                content={previewContent}
+                articleUrl={entry?.url}
+              />
+            </Suspense>
           </div>
         ) : null}
       </div>

@@ -1,4 +1,13 @@
-import { forwardRef, memo, useEffect, useRef, useState, useMemo } from "react";
+import {
+  forwardRef,
+  lazy,
+  memo,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  useMemo,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -40,7 +49,11 @@ import {
   type FeedMenuActions,
 } from "@/components/feed/FeedContextMenuItems";
 import { useFeedMenuActions } from "@/hooks/useFeedMenuActions";
-import { useUnmuteEntry, useFilters, useCreateFilterException } from "@/hooks/useFilters";
+import {
+  useUnmuteEntry,
+  useFilters,
+  useCreateFilterException,
+} from "@/hooks/useFilters";
 import { showToast } from "@/stores/toast-store";
 import { PluginSlot } from "@/plugins/PluginSlot";
 import { useTargetOps } from "@/plugins/useTargetOps";
@@ -48,14 +61,15 @@ import { openFilterEditorForEntry } from "@/stores/filter-editor-store";
 import { useAutoReadable } from "@/hooks/useAutoReadable";
 import { stripDuplicatedTitle } from "@/lib/strip-duplicated-title";
 import { stripContentImages } from "@/lib/strip-content-images";
-import {
-  extractContentMedia,
-} from "@/lib/extract-content-media";
+import { extractContentMedia } from "@/lib/extract-content-media";
 import { getProxiedImageUrl } from "@/lib/image-proxy";
 import { useAuthedImageUrl } from "@/lib/use-authed-image";
 import { SocialMediaGallery } from "@/components/entry-list/SocialMediaGallery";
 import { parseSocialSource } from "@/lib/social-source";
-import { removeContentSeparators, splitSocialQuote } from "@/lib/social-content";
+import {
+  removeContentSeparators,
+  splitSocialQuote,
+} from "@/lib/social-content";
 import { copyToClipboard } from "@/stores/toast-store";
 import {
   isRecoverableProxyUrl,
@@ -63,7 +77,18 @@ import {
   withProxyCacheBust,
 } from "@/lib/proxy-image-recovery";
 import { useInView } from "@/hooks/useInView";
-import { ArticleContent } from "@/components/ui/article-content";
+/**
+ * F4：列表卡片的正文预览走懒加载。
+ *
+ * 原来这里是 `import { ArticleContent } from "@/components/ui/article-content"` ——
+ * 那条链上有 `parse-html`（unified + rehype：首屏 71.8 KB gzip）。列表卡片是首屏组件，
+ * 于是整条 HTML 管线被算进首屏。改成按需拉之后，它跟着「真有卡片要渲正文」才到货，
+ * 首屏少掉这一块。
+ */
+const ArticleContent = lazy(async () => {
+  const module = await import("@/components/ui/article-content");
+  return { default: module.ArticleContent };
+});
 import { MachineTranslatedBadge } from "./machine-translated-badge";
 import { resolveReadingFontStack } from "@/lib/reading-fonts";
 import { useMobileLongPress } from "@/hooks/useMobileLongPress";
@@ -205,7 +230,9 @@ export function EntryContextMenuContent({
     <ContextMenuContent>
       {!targetOps.isHidden("entry.mark_read") && (
         <ContextMenuItem
-          onClick={() => markAsRead({ id: entry.id, read: readAction.nextRead })}
+          onClick={() =>
+            markAsRead({ id: entry.id, read: readAction.nextRead })
+          }
         >
           <readAction.Icon className="size-4 shrink-0 text-muted-foreground" />
           {t(readAction.labelKey)}
@@ -362,11 +389,11 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
      */
     const translation = useTranslationStore((state) =>
       targetLanguage
-        ? state.getTranslation(entry.id, targetLanguage) ??
+        ? (state.getTranslation(entry.id, targetLanguage) ??
           // 阅读模式开时正文页把译文写到 `${language}:readability` 槽；
           // 列表卡片默认读 `language` 槽会读不到（reviewer P2-1）。这里回退到可读槽，
           // 保证「正文里翻完、退出列表仍能看到译文」在各种阅读模式下都成立。
-          state.getTranslation(entry.id, targetLanguage, true)
+          state.getTranslation(entry.id, targetLanguage, true))
         : undefined,
     );
     const translationStatus = useTranslationStore((state) =>
@@ -386,10 +413,15 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
 
     /** 缩略图：优先 thumbnailUrl，其次正文首图（都走图片代理） */
     const thumbnail = useMemo(() => {
-      const images = getEntryImages(entry.thumbnailUrl, entry.content, entry.url);
+      const images = getEntryImages(
+        entry.thumbnailUrl,
+        entry.content,
+        entry.url,
+      );
       return images[0] ?? null;
     }, [entry.thumbnailUrl, entry.content, entry.url]);
-    const thumbnailSrc = thumbRecovered && thumbnail ? withProxyCacheBust(thumbnail) : thumbnail;
+    const thumbnailSrc =
+      thumbRecovered && thumbnail ? withProxyCacheBust(thumbnail) : thumbnail;
     const authedThumbnail = useAuthedImageUrl(thumbnailSrc ?? undefined);
 
     /** 阅读时长（与 EntryContentBody 同口径） */
@@ -420,9 +452,7 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
      * 取 2000/1000 而不是更大：够覆盖两屏的回滚距离，又不会为看不到的内容多抓正文。
      * 代价是多挂载几张卡（约 3000px 内容），换滚动不跳。
      */
-    const { ref: inViewRef, inView } = useInView<HTMLDivElement>(
-      "600px",
-    );
+    const { ref: inViewRef, inView } = useInView<HTMLDivElement>("600px");
     // 只在进入视口时按需抓正文，避免一次并发抓取整屏
     const autoReadable = useAutoReadable(entry, fetchReadable && inView);
     const expandedBodyRef = useRef<HTMLDivElement | null>(null);
@@ -477,13 +507,14 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
     // 避免卡片原文却挂「机器翻译」；失败/翻译中不需要内容也能提示。
     const contentBadgeState = translatedBody
       ? "done"
-      : contentStatus?.state === "failed" || contentStatus?.state === "translating"
+      : contentStatus?.state === "failed" ||
+          contentStatus?.state === "translating"
         ? contentStatus.state
         : null;
     const summaryStatus = translationStatus?.summary;
     const summaryBadgeState = translation?.summary
       ? "done"
-      : summaryStatus?.state ?? null;
+      : (summaryStatus?.state ?? null);
 
     // 源常在正文开头重复标题，时间线里标题已单独渲染，去掉重复的首段；
     // 图片也从正文摘掉，交给下面的缩略图行（对齐 Folo 的 noMedia + MediaGallery）
@@ -504,9 +535,7 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
        * 现在固定用 `entry.title` 比 `entry.content`（源数据），结论稳定、与译文无关；
        * 标题要不要显示译文由 `displayTitle` 自己负责（有译文标题就用译文）。
        */
-      const title = squash(
-        (entry.title ?? "").replace(/(?:\.{2,}|…)\s*$/, ""),
-      );
+      const title = squash((entry.title ?? "").replace(/(?:\.{2,}|…)\s*$/, ""));
       const raw = squash(stripHtml(entry.content ?? ""));
       if (title.length < 6 || !raw) return false;
       return raw.startsWith(title);
@@ -579,8 +608,15 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
               className={cn(
                 // Folo 的社交时间线是「居中可读宽度」而不是通栏
                 "group relative mx-auto mb-1 flex w-full max-w-[clamp(45ch,60vw,65ch)] cursor-pointer rounded-xl border border-transparent px-3 py-4 transition-colors duration-200",
-                isSelected ? "border-border/60 bg-card shadow-nf" : "hover:bg-item-hover",
-                unreadRowClass(isUnread, !!entry.starred, isSelected, unreadStyle),
+                isSelected
+                  ? "border-border/60 bg-card shadow-nf"
+                  : "hover:bg-item-hover",
+                unreadRowClass(
+                  isUnread,
+                  !!entry.starred,
+                  isSelected,
+                  unreadStyle,
+                ),
               )}
               style={style}
               data-index={dataIndex}
@@ -606,7 +642,11 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
 
               {/* 头像式 favicon（Folo 用 32px 的源图标当作者头像）；
                   未读标记（用户 12-2）用 HeroUI Badge 挂在它左上角 */}
-              <UnreadIndicator unread={isUnread} count={feedUnreadCount} className="mt-1">
+              <UnreadIndicator
+                unread={isUnread}
+                count={feedUnreadCount}
+                className="mt-1"
+              >
                 {showIcon ? (
                   <img
                     src={apiUrl(`/icons/${feed.iconPath}`)}
@@ -631,23 +671,23 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
                       sourceProps?.className,
                     )}
                   >
-                  {/* 源没给图标时，社交条目按平台给字形（Folo 这里显示作者头像） */}
-                  {socialSource?.platform === "x" ? (
-                    <svg
-                      className="size-3.5"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2.5}
-                      strokeLinecap="round"
-                    >
-                      <path d="M5 5l14 14M19 5L5 19" />
-                    </svg>
-                  ) : socialSource ? (
-                    <Globe className="size-4" />
-                  ) : (
-                    <FeedIcon className="size-4" />
-                  )}
+                    {/* 源没给图标时，社交条目按平台给字形（Folo 这里显示作者头像） */}
+                    {socialSource?.platform === "x" ? (
+                      <svg
+                        className="size-3.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2.5}
+                        strokeLinecap="round"
+                      >
+                        <path d="M5 5l14 14M19 5L5 19" />
+                      </svg>
+                    ) : socialSource ? (
+                      <Globe className="size-4" />
+                    ) : (
+                      <FeedIcon className="size-4" />
+                    )}
                   </div>
                 )}
               </UnreadIndicator>
@@ -667,9 +707,9 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
                   {/* Folo 会在源名后面挂 @handle（可点进作者主页）；
                       源名里已经带同一 handle 时不重复显示 */}
                   {socialSource &&
-                    !displayFeedName.toLowerCase().includes(
-                      socialSource.handle.toLowerCase(),
-                    ) && (
+                    !displayFeedName
+                      .toLowerCase()
+                      .includes(socialSource.handle.toLowerCase()) && (
                       <a
                         href={socialSource.profileUrl}
                         target="_blank"
@@ -683,7 +723,9 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
                   {publishedAt && (
                     <>
                       <span className="text-muted-foreground">·</span>
-                      <span className="text-muted-foreground">{publishedAt}</span>
+                      <span className="text-muted-foreground">
+                        {publishedAt}
+                      </span>
                     </>
                   )}
                   {entry.starred && (
@@ -728,65 +770,78 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
                   {inView ? (
                     <>
                       {socialBodyText && (
-                      <div
-                        ref={expandedBodyRef}
-                        // 卡片正文里的图片（含引文块内的）点开大图查看器。
-                        // 用捕获阶段：卡片根节点自己有点击（选中条目），子元素的处理在卡片里没生效
-                        onClickCapture={(event) => {
-                          const target = event.target as HTMLElement;
-                          if (target.tagName === "IMG") {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            const src = target.getAttribute("src") ?? "";
-                            const index = socialImages.findIndex((url) => url === src);
-                            openImagePreview(socialImages, index >= 0 ? index : 0);
-                            return;
-                          }
-                          /**
-                           * 正文里的链接（47-2，用户 2026-10-12 报）：
-                           * 只挡冒泡，不 preventDefault —— 链接照常新开标签，
-                           * 但不要让点击回到卡片根的 `onClick → onClick(entry.id)`，
-                           * 否则点一下链接会连带把「正文」推进第三栏（与 §2.43-③ 图片那条同一口径）。
-                           * 用 `closest` 而不是 `tagName`：链接里常包着 `<span>` / `<b>` / `<img>`，
-                           * 直接点进去时 event.target 不是 `<a>` 本身。
-                           */
-                          if (target.closest("a")) event.stopPropagation();
-                        }}
-                        className={cn(
-                          "entry-card entry-content prose prose-sm dark:prose-invert max-w-none break-words [&_img]:cursor-zoom-in",
-                          bodyClamped && "overflow-hidden",
-                        )}
-                        style={{
-                          fontSize: `${Math.max(14, entryFontSize - 2)}px`,
-                          lineHeight: entryLineHeight,
-                          ...(readingFontStack
-                            ? { fontFamily: readingFontStack }
-                            : {}),
-                          ...(bodyClamped
-                            ? {
-                                maxHeight: SOCIAL_COLLAPSED_HEIGHT,
-                                overflow: "hidden",
-                                maskImage: SOCIAL_COLLAPSE_MASK,
-                                WebkitMaskImage: SOCIAL_COLLAPSE_MASK,
-                              }
-                            : {}),
-                          ...(expandTarget !== null
-                            ? {
-                                maxHeight: `${expandTarget}px`,
-                                overflow: "hidden",
-                                transition:
-                                  "max-height 220ms cubic-bezier(0.22, 0.61, 0.36, 1)",
-                              }
-                            : {}),
-                        }}
-                        onTransitionEnd={() => setExpandTarget(null)}
-                      >
-                        <ArticleContent
-                          content={socialBodyText}
-                          articleUrl={entry.url}
-                          fitImages
-                        />
-                      </div>
+                        <div
+                          ref={expandedBodyRef}
+                          // 卡片正文里的图片（含引文块内的）点开大图查看器。
+                          // 用捕获阶段：卡片根节点自己有点击（选中条目），子元素的处理在卡片里没生效
+                          onClickCapture={(event) => {
+                            const target = event.target as HTMLElement;
+                            if (target.tagName === "IMG") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              const src = target.getAttribute("src") ?? "";
+                              const index = socialImages.findIndex(
+                                (url) => url === src,
+                              );
+                              openImagePreview(
+                                socialImages,
+                                index >= 0 ? index : 0,
+                              );
+                              return;
+                            }
+                            /**
+                             * 正文里的链接（47-2，用户 2026-10-12 报）：
+                             * 只挡冒泡，不 preventDefault —— 链接照常新开标签，
+                             * 但不要让点击回到卡片根的 `onClick → onClick(entry.id)`，
+                             * 否则点一下链接会连带把「正文」推进第三栏（与 §2.43-③ 图片那条同一口径）。
+                             * 用 `closest` 而不是 `tagName`：链接里常包着 `<span>` / `<b>` / `<img>`，
+                             * 直接点进去时 event.target 不是 `<a>` 本身。
+                             */
+                            if (target.closest("a")) event.stopPropagation();
+                          }}
+                          className={cn(
+                            "entry-card entry-content prose prose-sm dark:prose-invert max-w-none break-words [&_img]:cursor-zoom-in",
+                            bodyClamped && "overflow-hidden",
+                          )}
+                          style={{
+                            fontSize: `${Math.max(14, entryFontSize - 2)}px`,
+                            lineHeight: entryLineHeight,
+                            ...(readingFontStack
+                              ? { fontFamily: readingFontStack }
+                              : {}),
+                            ...(bodyClamped
+                              ? {
+                                  maxHeight: SOCIAL_COLLAPSED_HEIGHT,
+                                  overflow: "hidden",
+                                  maskImage: SOCIAL_COLLAPSE_MASK,
+                                  WebkitMaskImage: SOCIAL_COLLAPSE_MASK,
+                                }
+                              : {}),
+                            ...(expandTarget !== null
+                              ? {
+                                  maxHeight: `${expandTarget}px`,
+                                  overflow: "hidden",
+                                  transition:
+                                    "max-height 220ms cubic-bezier(0.22, 0.61, 0.36, 1)",
+                                }
+                              : {}),
+                          }}
+                          onTransitionEnd={() => setExpandTarget(null)}
+                        >
+                          <Suspense
+                            fallback={
+                              <div className="whitespace-pre-wrap text-sm text-muted-foreground">
+                                {stripHtml(socialBodyText).slice(0, 240)}
+                              </div>
+                            }
+                          >
+                            <ArticleContent
+                              content={socialBodyText}
+                              articleUrl={entry.url}
+                              fitImages
+                            />
+                          </Suspense>
+                        </div>
                       )}
 
                       {/* 显示更多：Folo 是「纯文字 + 下箭头」压在正文底部，不是一颗胶囊按钮 */}
@@ -838,11 +893,19 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
                         : {}),
                     }}
                   >
-                    <ArticleContent
-                      content={socialQuote}
-                      articleUrl={entry.url}
-                      fitImages
-                    />
+                    <Suspense
+                      fallback={
+                        <div className="whitespace-pre-wrap text-sm text-muted-foreground">
+                          {stripHtml(socialQuote).slice(0, 240)}
+                        </div>
+                      }
+                    >
+                      <ArticleContent
+                        content={socialQuote}
+                        articleUrl={entry.url}
+                        fitImages
+                      />
+                    </Suspense>
                   </div>
                 )}
 
@@ -858,11 +921,22 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
                 >
                   <button
                     type="button"
-                    title={entry.starred ? t("entry.remove_from_starred") : t("entry.add_to_starred")}
-                    onClick={() => markAsStarred({ id: entry.id, starred: !entry.starred })}
+                    title={
+                      entry.starred
+                        ? t("entry.remove_from_starred")
+                        : t("entry.add_to_starred")
+                    }
+                    onClick={() =>
+                      markAsStarred({ id: entry.id, starred: !entry.starred })
+                    }
                     className="flex size-7 items-center justify-center rounded-[var(--radius)] text-muted-foreground transition-colors duration-200 hover:bg-item-hover hover:text-foreground"
                   >
-                    <Star className={cn("size-4", entry.starred && "fill-amber-500 text-amber-500")} />
+                    <Star
+                      className={cn(
+                        "size-4",
+                        entry.starred && "fill-amber-500 text-amber-500",
+                      )}
+                    />
                   </button>
                   <button
                     type="button"
@@ -890,7 +964,11 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
                         type="button"
                         title={t("entry.copy_link")}
                         onClick={() =>
-                          void copyToClipboard(entry.url!, t("entry.copied_link"), t("actions.copy_failed"))
+                          void copyToClipboard(
+                            entry.url!,
+                            t("entry.copied_link"),
+                            t("actions.copy_failed"),
+                          )
                         }
                         className="flex size-7 items-center justify-center rounded-[var(--radius)] text-muted-foreground transition-colors duration-200 hover:bg-item-hover hover:text-foreground"
                       >
@@ -923,7 +1001,11 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
-                          void copyToClipboard(entry.url!, t("entry.copied_link"), t("actions.copy_failed"));
+                          void copyToClipboard(
+                            entry.url!,
+                            t("entry.copied_link"),
+                            t("actions.copy_failed"),
+                          );
                         }}
                         className="transition-colors duration-200 hover:text-foreground"
                       >
@@ -970,7 +1052,12 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
                 ? "bg-item-hover/60 sm:border-border/60 sm:bg-card sm:shadow-nf"
                 : "hover:bg-item-hover/50 sm:border-transparent sm:hover:bg-item-hover",
               // 对齐 Nextflux：已读且未加星标的卡片整体降透明度（只在「变灰」样式下；其余样式由 UnreadIndicator 表达）
-              unreadRowClass(isUnread, !!entry.starred, isSelected, unreadStyle),
+              unreadRowClass(
+                isUnread,
+                !!entry.starred,
+                isSelected,
+                unreadStyle,
+              ),
             )}
             style={style}
             data-index={dataIndex}
@@ -1033,7 +1120,10 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
                 text={displayFeedName}
                 // 52-4：点源名 = 跳去这个订阅（MarqueeText 已透传事件到外层容器）
                 {...sourceProps}
-                className={cn("min-w-0 flex-1 font-bold", sourceProps?.className)}
+                className={cn(
+                  "min-w-0 flex-1 font-bold",
+                  sourceProps?.className,
+                )}
               />
               {publishedAt && (
                 <span
@@ -1050,7 +1140,9 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
                 相对标题摘要块垂直居中 —— 不等高，避免压扁/裁切） */}
             <div
               className={cn(
-                isLargeImage ? "mt-3 flex flex-col gap-3" : "mt-1.5 flex items-center gap-3",
+                isLargeImage
+                  ? "mt-3 flex flex-col gap-3"
+                  : "mt-1.5 flex items-center gap-3",
               )}
             >
               <div className="min-w-0 flex-1">
@@ -1059,57 +1151,57 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
                   className={cn(
                     "text-[16px] font-semibold leading-[23px] wrap-anywhere sm:text-base sm:leading-6",
                     titleContainsUrl ? "line-clamp-3" : "line-clamp-2",
-                  // Nextflux 只用 opacity 表示已读；这里标题始终是前景色，
-                  // 已读/未读只差字重，避免再叠一层灰导致正文难以辨认
-                  // 已读 / 未读**不切字重**（对齐 Nextflux 的 ArticleCard：字体恒为 font-semibold，只用颜色区分）。
-                  // 原来读态切 font-medium：字重一变，同一条标题的换行就变，1 行 ↔ 2 行切换会改卡片高度，
-                  // 滚动时「标记已读」就会让整个列表跳一下（用户报的 BUG-2）。
-                  isUnread ? "text-foreground" : "text-muted-foreground",
-                )}
-              >
-                {displayTitle || fallbackTitle}
-              </div>
-
-              {/* 摘要（行数可在 设置 → 外观 里调，0 = 不显示） */}
-              {displaySummary && cardPreviewLines > 0 && !isExpanded && (
-                <div className="mt-1 flex items-start gap-1">
-                  <div
-                    className={cn(
-                      "min-w-0 flex-1 text-[13.5px] leading-[20px] text-muted-foreground wrap-anywhere sm:text-sm sm:leading-relaxed",
-                      !isUnread && "text-muted-foreground/70",
-                    )}
-                    style={{
-                      display: "-webkit-box",
-                      WebkitBoxOrient: "vertical",
-                      WebkitLineClamp:
-                        cardPreviewLines + (summaryContainsUrl ? 1 : 0),
-                      overflow: "hidden",
-                    }}
-                  >
-                    {displaySummary}
-                  </div>
-                  {/* REQ3：摘要是机器翻译时挂三态标记 */}
-                  {summaryBadgeState && (
-                    <MachineTranslatedBadge
-                      state={summaryBadgeState}
-                      error={summaryStatus?.error}
-                      service={summaryStatus?.service}
-                      provider={summaryStatus?.provider}
-                      model={summaryStatus?.model}
-                      variant="summary"
-                      className="mt-0.5 shrink-0"
-                    />
+                    // Nextflux 只用 opacity 表示已读；这里标题始终是前景色，
+                    // 已读/未读只差字重，避免再叠一层灰导致正文难以辨认
+                    // 已读 / 未读**不切字重**（对齐 Nextflux 的 ArticleCard：字体恒为 font-semibold，只用颜色区分）。
+                    // 原来读态切 font-medium：字重一变，同一条标题的换行就变，1 行 ↔ 2 行切换会改卡片高度，
+                    // 滚动时「标记已读」就会让整个列表跳一下（用户报的 BUG-2）。
+                    isUnread ? "text-foreground" : "text-muted-foreground",
                   )}
+                >
+                  {displayTitle || fallbackTitle}
                 </div>
-              )}
 
-              {/* 阅读时长 */}
-              {readingTime && (
-                <div className="mt-1 flex items-center gap-1 pt-1 text-xs text-muted-foreground/80">
-                  <Clock className="size-3 shrink-0" />
-                  <span className="line-clamp-1">{readingTime}</span>
-                </div>
-              )}
+                {/* 摘要（行数可在 设置 → 外观 里调，0 = 不显示） */}
+                {displaySummary && cardPreviewLines > 0 && !isExpanded && (
+                  <div className="mt-1 flex items-start gap-1">
+                    <div
+                      className={cn(
+                        "min-w-0 flex-1 text-[13.5px] leading-[20px] text-muted-foreground wrap-anywhere sm:text-sm sm:leading-relaxed",
+                        !isUnread && "text-muted-foreground/70",
+                      )}
+                      style={{
+                        display: "-webkit-box",
+                        WebkitBoxOrient: "vertical",
+                        WebkitLineClamp:
+                          cardPreviewLines + (summaryContainsUrl ? 1 : 0),
+                        overflow: "hidden",
+                      }}
+                    >
+                      {displaySummary}
+                    </div>
+                    {/* REQ3：摘要是机器翻译时挂三态标记 */}
+                    {summaryBadgeState && (
+                      <MachineTranslatedBadge
+                        state={summaryBadgeState}
+                        error={summaryStatus?.error}
+                        service={summaryStatus?.service}
+                        provider={summaryStatus?.provider}
+                        model={summaryStatus?.model}
+                        variant="summary"
+                        className="mt-0.5 shrink-0"
+                      />
+                    )}
+                  </div>
+                )}
+
+                {/* 阅读时长 */}
+                {readingTime && (
+                  <div className="mt-1 flex items-center gap-1 pt-1 text-xs text-muted-foreground/80">
+                    <Clock className="size-3 shrink-0" />
+                    <span className="line-clamp-1">{readingTime}</span>
+                  </div>
+                )}
               </div>
 
               {/* 缩略图：小图贴右（固定 76×76、垂直居中），大图铺在正文下方 */}
@@ -1124,35 +1216,34 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
                       : "size-[76px] shrink-0 self-center",
                   )}
                 >
-                <img
-                  src={authedThumbnail}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                  className={cn(
-                    "size-full object-cover transition-[transform,opacity] duration-300 group-hover:scale-[1.03]",
-                    isThumbLoaded ? "opacity-100" : "opacity-0",
-                  )}
-                  onLoad={() => setIsThumbLoaded(true)}
-                  onError={() => {
-                    // 24-4：先续期 cookie 再重载一次，不行才隐藏
-                    if (
-                      !thumbRecovered &&
-                      thumbnail &&
-                      isRecoverableProxyUrl(thumbnail)
-                    ) {
-                      void renewProxyCookie().finally(() =>
-                        setThumbRecovered(true),
-                      );
-                      return;
-                    }
-                    setImageError(true);
-                  }}
-                />
-              </div>
-            )}
+                  <img
+                    src={authedThumbnail}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className={cn(
+                      "size-full object-cover transition-[transform,opacity] duration-300 group-hover:scale-[1.03]",
+                      isThumbLoaded ? "opacity-100" : "opacity-0",
+                    )}
+                    onLoad={() => setIsThumbLoaded(true)}
+                    onError={() => {
+                      // 24-4：先续期 cookie 再重载一次，不行才隐藏
+                      if (
+                        !thumbRecovered &&
+                        thumbnail &&
+                        isRecoverableProxyUrl(thumbnail)
+                      ) {
+                        void renewProxyCookie().finally(() =>
+                          setThumbRecovered(true),
+                        );
+                        return;
+                      }
+                      setImageError(true);
+                    }}
+                  />
+                </div>
+              )}
             </div>
-
           </div>
         </ContextMenuTrigger>
         <EntryContextMenuContent
@@ -1178,4 +1269,3 @@ export const EntryListItemBase = forwardRef<HTMLDivElement, EntryListItemProps>(
  * 卡片自己的内部状态（图片加载、展开）不受影响，所以浅比较就够。
  */
 export const EntryListItem = memo(EntryListItemBase);
-

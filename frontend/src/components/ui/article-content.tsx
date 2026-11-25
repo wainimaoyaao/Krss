@@ -1,25 +1,14 @@
-import {
-  memo,
-  useMemo,
-  createElement,
-  createContext,
-  useCallback,
-} from "react";
+import { memo, useMemo, createElement, useCallback } from "react";
 import { parseHtml } from "@/lib/parse-html";
 import { getProxiedImageUrl } from "@/lib/image-proxy";
 import { useImagePreviewStore } from "@/stores/image-preview-store";
 import { ArticleImage, ArticleLinkContext } from "./article-image";
 import { ArticleVideo } from "./article-video";
+import { ImagePreviewContext } from "./article-preview-context";
 
-// Context for image preview - provides images list and open function
-export interface ImagePreviewContextValue {
-  images: string[];
-  openPreview: (src: string) => void;
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export const ImagePreviewContext =
-  createContext<ImagePreviewContextValue | null>(null);
+// 图片预览通道本体在 article-preview-context.ts（F4：别让只要 context 的人担上整条正文管线）
+export { ImagePreviewContext } from "./article-preview-context";
+export type { ImagePreviewContextValue } from "./article-preview-context";
 
 // Extract image URLs from HTML content
 function extractImagesFromHtml(html: string, articleUrl?: string): string[] {

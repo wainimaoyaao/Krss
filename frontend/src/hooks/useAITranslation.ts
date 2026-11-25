@@ -9,7 +9,15 @@ import {
   fetchCachedTranslations,
   type TranslateBlockData,
 } from "@/api";
-import { needsTranslation } from "@/lib/language-detect";
+/**
+ * F4：这里必须走**异步**检测器。
+ *
+ * 同步版 `@/lib/language-detect` 静态引 `eld/small`（1.5 MB 源码）—— 本文件在懒加载的
+ * 正文 chunk 里，那条 chunk 的动态 import 依赖表会把 ELD 一起预载：打开第一篇文章
+ * 就要多下 447 KB（gzip）。异步版内部才是 `await import(...)`，谁真要判语言才拉。
+ * 护栏：`src/lib/language-detect-import-policy.test.ts`。
+ */
+import { needsTranslation } from "@/lib/language-detect-async";
 import { stripHtml } from "@/lib/html-utils";
 import {
   useTranslationStore,
@@ -143,12 +151,45 @@ export function useAITranslation({
     ? translatedContent
     : null;
 
-  const isAlreadyTargetLanguage = useMemo(() => {
-    if (!entry) return false;
+  /**
+   * 「原文就是目标语言」这件事要问语言模型（异步）。判两次就够：
+   * 只在翻译真的相关时（自动翻译开着，或用户已经点过翻译）才算 ——
+   * 否则一个只想读英文原文的人永远不必为它下载 ELD。
+   *
+   * 依赖里刻意不含 hasTranslation：那时它还没定义（下面才由 store 推出），
+   * 而「已有译文」本来就会走缓存分支、不靠这个标记。
+   */
+  const [isAlreadyTargetLanguage, setIsAlreadyTargetLanguage] = useState(false);
+  useEffect(() => {
+    if (!entry) {
+      setIsAlreadyTargetLanguage(false);
+      return;
+    }
+    if (!autoTranslate && !translateRequestedRef.current) return;
+
+    let cancelled = false;
     const content = isReadableActive ? readableContent : entry.content;
     const summary = content ? stripHtml(content).slice(0, 200) : null;
-    return !needsTranslation(entry.title || "", summary, targetLanguage);
-  }, [entry, isReadableActive, readableContent, targetLanguage]);
+    void needsTranslation(entry.title || "", summary, targetLanguage).then(
+      (needed) => {
+        if (!cancelled) setIsAlreadyTargetLanguage(!needed);
+      },
+      () => {
+        // 检测失败就当「需要翻译」：让按钮可用，比锁死按钮安全
+        if (!cancelled) setIsAlreadyTargetLanguage(false);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    entry,
+    isReadableActive,
+    readableContent,
+    targetLanguage,
+    autoTranslate,
+    isTranslating,
+  ]);
 
   const displayTitle = useMemo(() => {
     if (!autoTranslate || !entry) return entry?.title || null;
@@ -414,7 +455,7 @@ export function useAITranslation({
     const summary = entry.content
       ? stripHtml(entry.content).slice(0, 200)
       : null;
-    if (needsTranslation(entry.title || "", summary, targetLanguage)) {
+    if (await needsTranslation(entry.title || "", summary, targetLanguage)) {
       translateArticlesBatch(
         [{ id: entry.id, title: entry.title || "", summary }],
         targetLanguage,
@@ -452,14 +493,17 @@ export function useAITranslation({
 
         const content = isReadableActive ? readableContent : entry?.content;
         const summary = content ? stripHtml(content).slice(0, 200) : null;
-
-        if (needsTranslation(entry?.title || "", summary, targetLanguage)) {
-          generateTranslation(isReadableActive);
-        } else {
-          cancelInFlightTranslation();
-          clearTranslationState();
-          translateRequestedRef.current = false;
-        }
+        void needsTranslation(entry?.title || "", summary, targetLanguage).then(
+          (needed) => {
+            if (needed) {
+              generateTranslation(isReadableActive);
+            } else {
+              cancelInFlightTranslation();
+              clearTranslationState();
+              translateRequestedRef.current = false;
+            }
+          },
+        );
       }
     }
   }, [
@@ -489,18 +533,35 @@ export function useAITranslation({
 
     const content = isReadableActive ? readableContent : entry.content;
     const summary = content ? stripHtml(content).slice(0, 200) : null;
-    if (!needsTranslation(entry.title || "", summary, targetLanguage)) {
-      return;
-    }
 
-    // 自动翻译也是「自己动起来」的，给个提示说明正在做什么。
-    // 49-3：**每条条目只弹一次** —— 这条链路会为同一条目跑两遍（预载没落库时再自发一次），
-    // 列表里快速切换就会叠出一屏一模一样的胶囊（用户报的就是这个）。
-    if (!autoTranslateToastShownRef.current) {
-      autoTranslateToastShownRef.current = true;
-      showToast(t("entry.auto_translate_on"));
-    }
-    generateTranslation(isReadableActive);
+    // F4：语言判定是异步的（ELD 按需加载），判定成立才动笔、才弹提示 ——
+    // 原文就是目标语言时不翻译，自然也不该冒出一句「正在自动翻译」。
+    let cancelled = false;
+    void needsTranslation(entry.title || "", summary, targetLanguage).then(
+      (needed) => {
+        if (cancelled || !needed) return;
+        // 自动翻译也是「自己动起来」的，给个提示说明正在做什么。
+        // 49-3：**每条条目只弹一次** —— 这条链路会为同一条目跑两遍（预载没落库时再自发一次），
+        // 列表里快速切换就会叠出一屏一模一样的胶囊（用户报的就是这个）。
+        if (!autoTranslateToastShownRef.current) {
+          autoTranslateToastShownRef.current = true;
+          showToast(t("entry.auto_translate_on"));
+        }
+        generateTranslation(isReadableActive);
+      },
+      () => {
+        // 检测失败：按「需要翻译」处理，别让自动翻译静默失效
+        if (cancelled) return;
+        if (!autoTranslateToastShownRef.current) {
+          autoTranslateToastShownRef.current = true;
+          showToast(t("entry.auto_translate_on"));
+        }
+        generateTranslation(isReadableActive);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
   }, [
     autoTranslate,
     entry,

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { EntryListItem } from "./EntryListItem";
 import { useFilterEditorStore } from "@/stores/filter-editor-store";
 import type { Entry, Feed } from "@/types/api";
@@ -96,6 +96,12 @@ const feed: Feed = {
 };
 
 describe("EntryListItem", () => {
+  // F4：正文卡片改成懒加载后，这个文件用的是假定时器 —— 首次解析动态 import 不会自己
+  // 跑完，先在 beforeAll 里预热进模块表，之后每次渲染都在微任务里就绪。
+  beforeAll(async () => {
+    await import("@/components/ui/article-content");
+  });
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-01-01T12:00:00.000Z"));
@@ -264,7 +270,7 @@ describe("EntryListItem", () => {
       expect(screen.queryByText("@op7418")).toBeNull();
     });
 
-    it("正文里的链接只开链接、不连带选中条目（47-2 回归）", () => {
+    it("正文里的链接只开链接、不连带选中条目（47-2 回归）", async () => {
       const onClick = vi.fn();
       render(
         <EntryListItem
@@ -281,6 +287,10 @@ describe("EntryListItem", () => {
         />,
       );
 
+      // F4：正文卡片现在懒加载（ArticleContent 单独成 chunk），先把渲染冲出来再点
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
       fireEvent.click(screen.getByText("链接"));
       expect(onClick).not.toHaveBeenCalled();
 

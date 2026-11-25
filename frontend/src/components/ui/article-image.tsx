@@ -20,7 +20,7 @@ import {
   renewProxyCookie,
   withProxyCacheBust,
 } from "@/lib/proxy-image-recovery";
-import { ImagePreviewContext } from "./article-content";
+import { ImagePreviewContext } from "./article-preview-context";
 import { useFittedImageBox } from "@/hooks/useFittedImageBox";
 import {
   useImageDimension,
@@ -91,7 +91,11 @@ export const ArticleImage = memo(function ArticleImage({
   const imagePreviewContext = useContext(ImagePreviewContext);
 
   // 42-9：自适应盒子（fit 关闭时 hook 内部全部短路，零开销）
-  const { containerRef, box, handleLoad: handleFitLoad } = useFittedImageBox({
+  const {
+    containerRef,
+    box,
+    handleLoad: handleFitLoad,
+  } = useFittedImageBox({
     src,
     declaredWidth: width ? Number(width) : undefined,
     declaredHeight: height ? Number(height) : undefined,
