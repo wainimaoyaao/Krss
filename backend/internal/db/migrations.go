@@ -703,6 +703,37 @@ func runMigrations(db *sql.DB) error {
 		return fmt.Errorf("migrate MCP outbound token: %w", err)
 	}
 
+	// Migration 40: 删掉没人查的 FTS5 索引（含两条同步触发器）。
+	if err := migrateDropUnusedFTS(db); err != nil {
+		return fmt.Errorf("drop unused FTS index: %w", err)
+	}
+
+	return nil
+}
+
+// migrateDropUnusedFTS 删掉 entries_fts 与它的两条触发器。
+//
+// 搜索从来没用过它：`entryRepository.Search` 是 LIKE 子串匹配（理由见那处注释 ——
+// unicode61 把整串中文当一个词，搜「黄金」搜不到「今天黄金不错」，中文场景不可用）。
+// 于是这个索引只有维护成本：每条新条目多写一次 FTS 行、每次删除多一条 DELETE。
+//
+// 实测（20,000 条，本机 macOS，modernc sqlite）：
+//   - 有 FTS：5.97 ms/条，库 20,742,144 字节
+//   - 无 FTS：5.28 ms/条，库 13,996,032 字节
+//     ⇒ 约 0.7 ms/条 + 每两万条约 6.7 MB，换来的查询收益为零（同一批搜索语句
+//     两种库上的耗时一致：0.17–0.33 ms 命中、约 13 ms 无命中全扫）。
+//
+// 幂等：三条都是 DROP IF EXISTS，重跑无副作用，不需要版本标记。
+func migrateDropUnusedFTS(db *sql.DB) error {
+	for _, stmt := range []string{
+		`DROP TRIGGER IF EXISTS entries_ai`,
+		`DROP TRIGGER IF EXISTS entries_ad`,
+		`DROP TABLE IF EXISTS entries_fts`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("exec %q: %w", stmt, err)
+		}
+	}
 	return nil
 }
 
