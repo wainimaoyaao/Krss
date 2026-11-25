@@ -1,0 +1,15 @@
+8:time=2026-11-25T17:16:36.098+08:00 level=info msg="refresh completed" module=service action=refresh resource=feed result=ok count=0
+9:time=2026-11-25T17:16:36.098+08:00 level=info msg="scheduled feed refresh completed" module=scheduler action=refresh resource=feed result=ok
+22:time=2026-11-25T17:20:11.558+08:00 level=info msg="feed refresh triggered" module=handler action=refresh resource=feed result=ok force=false
+25:time=2026-11-25T17:20:11.565+08:00 level=warn msg="http request" module=http action=request resource=http result=failed method=POST path=/api/feeds/refresh status_code=409 duration_ms=0 remote_ip=127.0.0.1 user_agent=curl/8.7.1
+29:time=2026-11-25T17:22:22.116+08:00 level=warn msg="refresh completed with failures" module=service action=refresh resource=feed result=partial count=3
+38:time=2026-11-25T17:22:29.523+08:00 level=info msg="feed refresh backed off" module=service action=refresh resource=feed result=skipped feed_id=2125519240587907072 feed_title=bad fail_count=1 next_retry=2026-11-25T09:25:15Z
+41:time=2026-11-25T17:22:37.154+08:00 level=warn msg="http request" module=http action=request resource=http result=failed method=POST path=/api/feeds/refresh status_code=409 duration_ms=0 remote_ip=127.0.0.1 user_agent=curl/8.7.1
+42:time=2026-11-25T17:22:37.160+08:00 level=warn msg="http request" module=http action=request resource=http result=failed method=POST path=/api/feeds/refresh status_code=409 duration_ms=0 remote_ip=127.0.0.1 user_agent=curl/8.7.1
+45:time=2026-11-25T17:23:29.522+08:00 level=warn msg="refresh completed with failures" module=service action=refresh resource=feed result=partial count=2
+46:time=2026-11-25T17:23:29.522+08:00 level=warn msg="scheduled feed refresh completed with failures" module=scheduler action=refresh resource=feed result=partial
+47:time=2026-11-25T17:23:54.952+08:00 level=info msg="feed refresh triggered" module=handler action=refresh resource=feed result=ok force=false
+53:time=2026-11-25T17:24:29.523+08:00 level=info msg="scheduled feed refresh skipped" module=scheduler action=refresh resource=feed result=skipped reason=already_refreshing
+56:time=2026-11-25T17:25:29.523+08:00 level=info msg="scheduled feed refresh skipped" module=scheduler action=refresh resource=feed result=skipped reason=already_refreshing
+58:time=2026-11-25T17:26:05.388+08:00 level=warn msg="refresh completed with failures" module=service action=refresh resource=feed result=partial count=3
+61:time=2026-11-25T17:26:29.524+08:00 level=info msg="feed refresh backed off" module=service action=refresh resource=feed result=skipped feed_id=2125519240587907072 feed_title=bad fail_count=2 next_retry=2026-11-25T09:33:58Z
