@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Noooste/azuretls-client"
 	"github.com/gabriel-vasile/mimetype"
 
 	"krss/backend/internal/config"
+	"krss/backend/internal/service/anubis"
 	"krss/backend/pkg/logger"
 	"krss/backend/pkg/network"
 )
@@ -27,6 +27,7 @@ const proxyTimeout = 30 * time.Second
 const maxProxyMediaBytes = 64 << 20
 
 var (
+	ErrPrivateNetwork   = network.ErrNonPublicAddress
 	ErrInvalidURL       = fmt.Errorf("invalid URL")
 	ErrInvalidProtocol  = fmt.Errorf("invalid protocol")
 	ErrRequestTimeout   = fmt.Errorf("request timeout")
@@ -81,34 +82,22 @@ func (s *proxyService) FetchImage(ctx context.Context, imageURL, refererURL stri
 }
 
 func (s *proxyService) FetchMedia(ctx context.Context, mediaURL, refererURL, rangeHeader string) (*ProxyResult, error) {
-	// 50-2：带 Range 的是 <video> 拖进度条，不缓存、也不查缓存（片段命中判断不值当）
+	if _, err := parseMediaURL(mediaURL); err != nil {
+		return nil, err
+	}
+	// 隔离旧缓存：旧版本可能缓存了未受出站限制的内容。
+	cacheKey := "public-media-v1:" + mediaURL
 	cacheable := rangeHeader == "" && s.mediaCache != nil
 	if cacheable {
-		if hit, ok := s.mediaCache.Get(mediaURL); ok {
-			logger.Debug("proxy media cache hit", "module", "service", "action", "fetch", "resource", "proxy", "result", "ok", "host", safeHostLog(mediaURL))
+		if hit, ok := s.mediaCache.Get(cacheKey); ok {
 			return hit, nil
 		}
 	}
-
-	// 先用标准 HTTP 客户端：它能正确走「设置 → 网络」里配置的代理，也会自动跟随图床跳转
-	// （azuretls 会话在 HTTP 代理下会超时）
-	result, stdErr := s.fetchWithStandardClient(ctx, mediaURL, refererURL, rangeHeader)
-	if stdErr == nil {
-		if cacheable && result.StatusCode == http.StatusOK {
-			s.mediaCache.Put(mediaURL, result)
-		}
-		return result, nil
+	result, err := s.fetchWithStandardClient(ctx, mediaURL, refererURL, rangeHeader)
+	if err == nil && cacheable && result.StatusCode == http.StatusOK {
+		s.mediaCache.Put(cacheKey, result)
 	}
-
-	logger.Debug("proxy standard client failed, falling back", "module", "service", "action", "fetch", "resource", "proxy", "result", "failed", "error", stdErr)
-
-	// 再退到 azuretls 会话（浏览器 TLS 指纹）：反爬 / Anubis 挑战的站点靠它
-	// （兜底这条路只做整段取，不带 Range）
-	result, fallbackErr := s.fetchImageWithRetry(ctx, mediaURL, refererURL, "", 0)
-	if fallbackErr == nil && cacheable {
-		s.mediaCache.Put(mediaURL, result)
-	}
-	return result, fallbackErr
+	return result, err
 }
 
 // WithMediaCache 挂上磁盘缓存（dir 空则不启用）。
@@ -125,28 +114,25 @@ func (s *proxyService) MediaCacheStats() (int, int64) {
 	return s.mediaCache.Stats()
 }
 
-// safeHostLog 日志用的主机名（拿不到就回原串的短版）
-func safeHostLog(rawURL string) string {
-	if parsed, err := url.Parse(rawURL); err == nil && parsed.Host != "" {
-		return parsed.Host
-	}
-	if len(rawURL) > 48 {
-		return rawURL[:48]
-	}
-	return rawURL
-}
-
-// fetchWithStandardClient 用 net/http 抓图：代理、跳转、cookie 都由标准栈处理。
-// 拿到的不是图片（例如 Anubis 挑战页）就返回错误，交给上层退到 azuretls。
-func (s *proxyService) fetchWithStandardClient(ctx context.Context, imageURL, refererURL, rangeHeader string) (*ProxyResult, error) {
-	parsedURL, err := url.Parse(imageURL)
+func parseMediaURL(raw string) (*url.URL, error) {
+	u, err := url.Parse(raw)
 	if err != nil {
 		return nil, ErrInvalidURL
 	}
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+	if u.Scheme != "http" && u.Scheme != "https" {
 		return nil, ErrInvalidProtocol
 	}
+	if u.Hostname() == "" || u.User != nil {
+		return nil, ErrInvalidURL
+	}
+	return u, network.CheckPublicIPLiteral(u.Hostname())
+}
 
+func (s *proxyService) fetchWithStandardClient(ctx context.Context, imageURL, refererURL, rangeHeader string) (*ProxyResult, error) {
+	parsedURL, err := parseMediaURL(imageURL)
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
 	if err != nil {
 		return nil, ErrInvalidURL
@@ -157,10 +143,20 @@ func (s *proxyService) fetchWithStandardClient(ctx context.Context, imageURL, re
 		req.Header.Set("Cookie", cachedCookie)
 	}
 
-	client := s.clientFactory.NewHTTPClient(ctx, proxyTimeout)
+	client := s.clientFactory.NewPublicHTTPClient(ctx, proxyTimeout)
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("too many redirects")
+		}
+		if req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host {
+			req.Header.Del("Cookie")
+		}
+		_, err := parseMediaURL(req.URL.String())
+		return err
+	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrFetchFailed, err)
+		return nil, fmt.Errorf("%w: %w", ErrFetchFailed, err)
 	}
 	defer resp.Body.Close()
 
@@ -171,12 +167,16 @@ func (s *proxyService) fetchWithStandardClient(ctx context.Context, imageURL, re
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxProxyMediaBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrFetchFailed, err)
+		return nil, fmt.Errorf("%w: %w", ErrFetchFailed, err)
 	}
 	if len(data) > maxProxyMediaBytes {
 		return nil, fmt.Errorf("%w: response too large", ErrFetchFailed)
 	}
 
+	// 不启动不受本客户端约束的 Anubis challenge 出站请求。
+	if s.anubis != nil && anubis.IsAnubisPage(data) {
+		return nil, ErrUpstreamRejected
+	}
 	contentType, err := detectProxyMediaContentType(resp.Header.Get("Content-Type"), data)
 	if err != nil {
 		logger.Debug("proxy standard client got unsupported media", "module", "service", "action", "fetch", "resource", "proxy", "result", "failed", "host", parsedURL.Host, "error", err)
@@ -217,103 +217,6 @@ func setProxyImageHeaders(header http.Header, refererURL string, parsedURL *url.
 	header.Set("sec-fetch-mode", "no-cors")
 	header.Set("sec-fetch-site", "cross-site")
 	header.Set("user-agent", config.ChromeUserAgent)
-}
-
-func (s *proxyService) fetchImageWithRetry(ctx context.Context, imageURL, refererURL, cookie string, retryCount int) (*ProxyResult, error) {
-	session := s.clientFactory.NewAzureSession(ctx, proxyTimeout)
-	defer session.Close()
-	return s.doFetch(ctx, session, imageURL, refererURL, cookie, retryCount)
-}
-
-// fetchWithFreshSession creates a new azuretls session to avoid connection reuse after Anubis
-func (s *proxyService) fetchWithFreshSession(ctx context.Context, imageURL, refererURL, cookie string, retryCount int) (*ProxyResult, error) {
-	session := s.clientFactory.NewAzureSession(ctx, proxyTimeout)
-	defer session.Close()
-	return s.doFetch(ctx, session, imageURL, refererURL, cookie, retryCount)
-}
-
-// doFetch performs the actual HTTP request with the given session
-func (s *proxyService) doFetch(ctx context.Context, session *azuretls.Session, imageURL, refererURL, cookie string, retryCount int) (*ProxyResult, error) {
-	parsedURL, err := url.Parse(imageURL)
-	if err != nil {
-		return nil, ErrInvalidURL
-	}
-
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return nil, ErrInvalidProtocol
-	}
-
-	// Build Referer
-	referer := buildReferer(refererURL, parsedURL)
-
-	// Build headers
-	headers := azuretls.OrderedHeaders{
-		{"accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"},
-		{"accept-language", "zh-CN,zh;q=0.9"},
-		{"referer", referer},
-		{"sec-ch-ua", config.ChromeSecChUa},
-		{"sec-ch-ua-mobile", "?0"},
-		{"sec-ch-ua-platform", `"Windows"`},
-		{"sec-fetch-dest", "image"},
-		{"sec-fetch-mode", "no-cors"},
-		{"sec-fetch-site", "cross-site"},
-		{"user-agent", config.ChromeUserAgent},
-	}
-
-	// Add cookie
-	requestHeaders := orderedHeadersToHTTPHeader(headers)
-	if cookie != "" {
-		headers = append(headers, []string{"cookie", cookie})
-	} else {
-		if cachedCookie := getCachedAnubisCookie(ctx, s.anubis, parsedURL.Host, requestHeaders); cachedCookie != "" {
-			headers = append(headers, []string{"cookie", cachedCookie})
-		}
-	}
-
-	resp, err := session.Do(&azuretls.Request{
-		Method:         http.MethodGet,
-		Url:            imageURL,
-		OrderedHeaders: headers,
-	})
-	if err != nil {
-		logger.Warn("proxy fetch failed", "module", "service", "action", "fetch", "resource", "proxy", "result", "failed", "host", parsedURL.Host, "error", err)
-		return nil, fmt.Errorf("%w: %v", ErrFetchFailed, err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		logger.Error("proxy http error", "module", "service", "action", "fetch", "resource", "proxy", "result", "failed", "host", parsedURL.Host, "status_code", resp.StatusCode)
-		return nil, fmt.Errorf("%w: %d", ErrFetchFailed, resp.StatusCode)
-	}
-
-	data := resp.Body
-
-	newCookie, anubisErr := trySolveAnubisChallenge(ctx, s.anubis, data, imageURL, cookiesFromMap(resp.Cookies), requestHeaders, retryCount)
-	switch {
-	case anubisErr == nil:
-		return s.fetchWithFreshSession(ctx, imageURL, refererURL, newCookie, retryCount+1)
-	case errors.Is(anubisErr, errAnubisNotPage):
-		// Not an Anubis page; continue normal proxy response handling.
-	case errors.Is(anubisErr, errAnubisRejected):
-		logger.Warn("proxy upstream rejected", "module", "service", "action", "fetch", "resource", "proxy", "result", "failed", "host", parsedURL.Host)
-		return nil, ErrUpstreamRejected
-	case errors.Is(anubisErr, errAnubisRetryExceeded):
-		logger.Warn("proxy anubis persists", "module", "service", "action", "fetch", "resource", "proxy", "result", "failed", "host", parsedURL.Host, "retry_count", retryCount)
-		return nil, fmt.Errorf("%w: anubis challenge persists after %d retries", ErrFetchFailed, retryCount)
-	default:
-		logger.Warn("proxy anubis solve failed", "module", "service", "action", "fetch", "resource", "proxy", "result", "failed", "host", parsedURL.Host, "error", anubisErr)
-		return nil, ErrFetchFailed
-	}
-
-	contentType, err := detectProxyMediaContentType(resp.Header.Get("Content-Type"), data)
-	if err != nil {
-		logger.Warn("proxy invalid media", "module", "service", "action", "fetch", "resource", "proxy", "result", "failed", "host", parsedURL.Host, "error", err)
-		return nil, err
-	}
-
-	return &ProxyResult{
-		Data:        data,
-		ContentType: contentType,
-	}, nil
 }
 
 // detectProxyMediaContentType 判定代理回来的东西能不能直接回给浏览器：

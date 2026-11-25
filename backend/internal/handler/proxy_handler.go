@@ -110,6 +110,8 @@ func (h *ProxyHandler) handleServiceError(c echo.Context, err error) error {
 	switch {
 	case errors.Is(err, service.ErrInvalidURL):
 		return Error(c, http.StatusBadRequest, "Invalid URL")
+	case errors.Is(err, service.ErrPrivateNetwork):
+		return Error(c, http.StatusForbidden, "Media destination is not public")
 	case errors.Is(err, service.ErrInvalidProtocol):
 		return Error(c, http.StatusBadRequest, "Invalid protocol")
 	case errors.Is(err, service.ErrRequestTimeout):

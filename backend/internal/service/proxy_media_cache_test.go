@@ -60,12 +60,12 @@ func TestFetchMedia_CachesAndSkipsUpstreamOnSecondCall(t *testing.T) {
 	upstream, hits := imageUpstream(t)
 	svc := newCachingProxy(t, t.TempDir())
 
-	first, err := svc.FetchMedia(context.Background(), upstream.URL+"/a.png", "", "")
+	first, err := svc.FetchMedia(context.Background(), localFixtureURL(upstream)+"/a.png", "", "")
 	require.NoError(t, err)
 	require.Equal(t, "image/png", first.ContentType)
 	require.Equal(t, int32(1), atomic.LoadInt32(hits), "第一次必须真的出网")
 
-	second, err := svc.FetchMedia(context.Background(), upstream.URL+"/a.png", "", "")
+	second, err := svc.FetchMedia(context.Background(), localFixtureURL(upstream)+"/a.png", "", "")
 	require.NoError(t, err)
 	require.Equal(t, int32(1), atomic.LoadInt32(hits), "第二次必须命中缓存、不再出网（改前这里还是 2）")
 	require.Equal(t, first.Data, second.Data, "缓存里的字节要和第一次一致")
@@ -77,9 +77,9 @@ func TestFetchMedia_NoCacheWhenDisabled(t *testing.T) {
 	upstream, hits := imageUpstream(t)
 	svc := newCachingProxy(t, "") // 不挂缓存
 
-	_, err := svc.FetchMedia(context.Background(), upstream.URL+"/b.png", "", "")
+	_, err := svc.FetchMedia(context.Background(), localFixtureURL(upstream)+"/b.png", "", "")
 	require.NoError(t, err)
-	_, err = svc.FetchMedia(context.Background(), upstream.URL+"/b.png", "", "")
+	_, err = svc.FetchMedia(context.Background(), localFixtureURL(upstream)+"/b.png", "", "")
 	require.NoError(t, err)
 	require.Equal(t, int32(2), atomic.LoadInt32(hits), "没挂缓存时就该老老实实每次都出网")
 }
@@ -89,14 +89,14 @@ func TestFetchMedia_RangeBypassesCache(t *testing.T) {
 	svc := newCachingProxy(t, t.TempDir())
 
 	// <video> 拖进度条会带 Range：这种片段不该走缓存，也不该被当成整段缓存下来
-	_, err := svc.FetchMedia(context.Background(), upstream.URL+"/v.mp4", "", "bytes=0-3")
+	_, err := svc.FetchMedia(context.Background(), localFixtureURL(upstream)+"/v.mp4", "", "bytes=0-3")
 	require.NoError(t, err)
-	_, err = svc.FetchMedia(context.Background(), upstream.URL+"/v.mp4", "", "bytes=0-3")
+	_, err = svc.FetchMedia(context.Background(), localFixtureURL(upstream)+"/v.mp4", "", "bytes=0-3")
 	require.NoError(t, err)
 	require.Equal(t, int32(2), atomic.LoadInt32(hits), "带 Range 的请求必须每次都出网")
 
 	// 而且别把片段当整段塞进缓存：随后一次不带 Range 的请求应当仍然出网
-	_, err = svc.FetchMedia(context.Background(), upstream.URL+"/v.mp4", "", "")
+	_, err = svc.FetchMedia(context.Background(), localFixtureURL(upstream)+"/v.mp4", "", "")
 	require.NoError(t, err)
 	require.Equal(t, int32(3), atomic.LoadInt32(hits), "Range 请求不该污染缓存")
 }
@@ -108,7 +108,7 @@ func TestMediaCache_PrunesWhenOverCap(t *testing.T) {
 		WithMediaCache(t.TempDir(), 400)
 
 	for i := 0; i < 30; i++ {
-		_, err := svc.FetchMedia(context.Background(), fmt.Sprintf("%s/p%d.png", upstream.URL, i), "", "")
+		_, err := svc.FetchMedia(context.Background(), fmt.Sprintf("%s/p%d.png", localFixtureURL(upstream), i), "", "")
 		require.NoError(t, err)
 	}
 
