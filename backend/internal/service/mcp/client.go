@@ -44,8 +44,8 @@ type ServerInfo struct {
 }
 
 // Name / Version 便捷取值（调用方大多只关心这两个）。
-func (s ServerInfo) Name() string    { return s.ServerInfo.Name }
-func (s ServerInfo) Title() string   { return s.ServerInfo.Title }
+func (s ServerInfo) Name() string  { return s.ServerInfo.Name }
+func (s ServerInfo) Title() string { return s.ServerInfo.Title }
 
 // Tool tools/list 里的一条工具定义。
 // OutputSchema 是可选的（很多自建 MCP 不声明）—— 有它就能「零人工」生成映射。
@@ -69,10 +69,10 @@ type Resource struct {
 
 // Content tools/call 结果里的一段内容（规范里的联合类型，只取我们用得到的字段）。
 type Content struct {
-	Type     string    `json:"type"`
-	Text     string    `json:"text,omitempty"`
-	Data     string    `json:"data,omitempty"`
-	MimeType string    `json:"mimeType,omitempty"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	Data     string `json:"data,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
 	// resource_link
 	URI  string `json:"uri,omitempty"`
 	Name string `json:"name,omitempty"`
@@ -155,7 +155,8 @@ type Client struct {
 	headers    map[string]string
 	transport  string
 
-	sse *sseSession
+	sse   *sseSession
+	guard *EndpointGuard
 
 	mu         sync.Mutex
 	nextID     int
@@ -172,9 +173,17 @@ func NewClient(httpClient *http.Client, endpoint string, headers map[string]stri
 
 // NewClientWithTransport 指定传输建会话（sse = 旧版 HTTP+SSE 传输 —— 16-10）。
 func NewClientWithTransport(httpClient *http.Client, endpoint string, headers map[string]string, transport string) *Client {
-	client := &Client{httpClient: httpClient, endpoint: endpoint, headers: headers, transport: transport}
+	guard := NewEndpointGuard(endpoint)
+	client := &Client{
+		httpClient: guard.Client(httpClient),
+		endpoint:   endpoint,
+		headers:    headers,
+		transport:  transport,
+		guard:      guard,
+	}
 	if transport == "sse" {
 		client.sse = newSSESession(httpClient, endpoint, headers)
+		client.sse.guard = guard
 	}
 	return client
 }
@@ -356,6 +365,9 @@ func (c *Client) call(ctx context.Context, method string, params any, ensureInit
 
 // post 发一次 POST 并读回响应体（可能是 JSON，也可能是 SSE）。
 func (c *Client) post(ctx context.Context, body []byte) ([]byte, error) {
+	if err := c.guard.CheckURL(c.endpoint); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err

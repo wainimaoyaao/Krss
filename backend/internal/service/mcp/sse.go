@@ -35,6 +35,8 @@ type sseSession struct {
 	sseURL     string
 	headers    map[string]string
 
+	guard *EndpointGuard
+
 	mu         sync.Mutex
 	endpoint   string // 解析好的 POST 地址（空 = 流断了，下次调用重建）
 	cancel     context.CancelFunc
@@ -138,6 +140,9 @@ func (s *sseSession) ensure(ctx context.Context) (string, error) {
 		return endpoint, nil
 	}
 
+	if err := s.guard.CheckURL(s.sseURL); err != nil {
+		return "", err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.sseURL, nil)
 	if err != nil {
 		return "", err
@@ -159,6 +164,11 @@ func (s *sseSession) ensure(ctx context.Context) (string, error) {
 	// 等第一个 endpoint 事件（带上 ctx 超时，别无限等）。
 	endpointURL, err := waitEndpointEvent(ctx, resp.Body, s.sseURL)
 	if err != nil {
+		resp.Body.Close()
+		return "", err
+	}
+	// endpoint 事件由对方指定「往哪儿 POST」：必须与配置地址同源，否则内网就被打开了。
+	if err := s.guard.CheckEndpointEvent(endpointURL); err != nil {
 		resp.Body.Close()
 		return "", err
 	}

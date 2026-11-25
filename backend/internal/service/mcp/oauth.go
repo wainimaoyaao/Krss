@@ -49,6 +49,8 @@ type OAuthTokens struct {
 // DiscoverAuthServer 按 PRM 流程找授权服务器：先问 MCP 服务自己（well-known/prm），
 // 404 就退回「MCP 地址 origin 上的 authorization-server 元数据」（很多自建服务只配后者）。
 func DiscoverAuthServer(ctx context.Context, httpClient *http.Client, mcpURL string) (authServer string, meta AuthServerMetadata, err error) {
+	// 授权服务器地址是 MCP 服务自己给的：它指向哪儿由守卫判（内网/回环一律不放）。
+	guard := NewEndpointGuard(mcpURL)
 	base := strings.TrimRight(strings.TrimSpace(mcpURL), "/")
 	if base == "" {
 		return "", AuthServerMetadata{}, fmt.Errorf("MCP 地址为空")
@@ -59,7 +61,7 @@ func DiscoverAuthServer(ctx context.Context, httpClient *http.Client, mcpURL str
 	}
 	if fetchErr := fetchJSON(ctx, httpClient, base+"/.well-known/oauth-protected-resource", nil, &prm); fetchErr == nil && len(prm.AuthorizationServers) > 0 {
 		authServer = strings.TrimRight(prm.AuthorizationServers[0], "/")
-		if meta, err = fetchAuthServerMetadata(ctx, httpClient, authServer); err == nil {
+		if meta, err = fetchAuthServerMetadata(ctx, httpClient, authServer, guard); err == nil {
 			return authServer, meta, nil
 		}
 	}
@@ -69,20 +71,32 @@ func DiscoverAuthServer(ctx context.Context, httpClient *http.Client, mcpURL str
 		return "", AuthServerMetadata{}, fmt.Errorf("MCP 地址解析失败")
 	}
 	origin := parsed.Scheme + "://" + parsed.Host
-	if meta, err = fetchAuthServerMetadata(ctx, httpClient, origin); err == nil {
+	if meta, err = fetchAuthServerMetadata(ctx, httpClient, origin, guard); err == nil {
 		return origin, meta, nil
 	}
 	return "", AuthServerMetadata{}, fmt.Errorf("没找到授权服务器（PRM 与 authorization-server 元数据都读不到）: %w", err)
 }
 
-func fetchAuthServerMetadata(ctx context.Context, httpClient *http.Client, issuer string) (AuthServerMetadata, error) {
+func fetchAuthServerMetadata(ctx context.Context, httpClient *http.Client, issuer string, guard *EndpointGuard) (AuthServerMetadata, error) {
 	var meta AuthServerMetadata
+	if err := guard.CheckURL(issuer); err != nil {
+		return AuthServerMetadata{}, err
+	}
 	endpoint := strings.TrimRight(issuer, "/") + "/.well-known/oauth-authorization-server"
 	if err := fetchJSON(ctx, httpClient, endpoint, nil, &meta); err != nil {
 		return AuthServerMetadata{}, err
 	}
 	if meta.AuthorizationEndpoint == "" || meta.TokenEndpoint == "" {
 		return AuthServerMetadata{}, fmt.Errorf("授权服务器元数据缺 authorize/token 端点")
+	}
+	// 元数据里的端点同样只认守卫放行的地址（公网服务不能把 token 端点指到内网）。
+	for _, endpoint := range []string{meta.AuthorizationEndpoint, meta.TokenEndpoint, meta.RegistrationEndpoint} {
+		if strings.TrimSpace(endpoint) == "" {
+			continue
+		}
+		if err := guard.CheckURL(endpoint); err != nil {
+			return AuthServerMetadata{}, err
+		}
 	}
 	if meta.Issuer == "" {
 		meta.Issuer = strings.TrimRight(issuer, "/")
@@ -92,17 +106,20 @@ func fetchAuthServerMetadata(ctx context.Context, httpClient *http.Client, issue
 
 // RegisterClient DCR：在授权服务器上动态注册一个公开客户端（PKCE，无 secret）。
 // 注册端点缺失或服务器拒绝 → ErrDCRUnsupported（界面给手填框，不报错）。
-func RegisterClient(ctx context.Context, httpClient *http.Client, meta AuthServerMetadata, redirectURI, clientName string) (clientID, clientSecret string, err error) {
+func RegisterClient(ctx context.Context, httpClient *http.Client, guard *EndpointGuard, meta AuthServerMetadata, redirectURI, clientName string) (clientID, clientSecret string, err error) {
 	if strings.TrimSpace(meta.RegistrationEndpoint) == "" {
 		return "", "", ErrDCRUnsupported
 	}
+	if err := guard.CheckURL(meta.RegistrationEndpoint); err != nil {
+		return "", "", err
+	}
 	body, _ := json.Marshal(map[string]any{
-		"client_name":               clientName,
-		"redirect_uris":             []string{redirectURI},
-		"grant_types":               []string{"authorization_code", "refresh_token"},
-		"response_types":            []string{"code"},
+		"client_name":                clientName,
+		"redirect_uris":              []string{redirectURI},
+		"grant_types":                []string{"authorization_code", "refresh_token"},
+		"response_types":             []string{"code"},
 		"token_endpoint_auth_method": "none",
-		"scope":                     "mcp",
+		"scope":                      "mcp",
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, meta.RegistrationEndpoint, bytes.NewReader(body))
 	if err != nil {
@@ -172,26 +189,29 @@ func BuildAuthorizeURL(meta AuthServerMetadata, clientID, redirectURI, scope, re
 }
 
 // ExchangeCode 回调换 token（authorization_code → access/refresh）。
-func ExchangeCode(ctx context.Context, httpClient *http.Client, tokenEndpoint, clientID, clientSecret, code, redirectURI, verifier string) (OAuthTokens, error) {
+func ExchangeCode(ctx context.Context, httpClient *http.Client, guard *EndpointGuard, tokenEndpoint, clientID, clientSecret, code, redirectURI, verifier string) (OAuthTokens, error) {
 	form := url.Values{}
 	form.Set("grant_type", "authorization_code")
 	form.Set("code", code)
 	form.Set("redirect_uri", redirectURI)
 	form.Set("client_id", clientID)
 	form.Set("code_verifier", verifier)
-	return postToken(ctx, httpClient, tokenEndpoint, clientID, clientSecret, form)
+	return postToken(ctx, httpClient, guard, tokenEndpoint, clientID, clientSecret, form)
 }
 
 // RefreshTokens 自动刷新（refresh_token → 新 access；有的服务连 refresh 一起换）。
-func RefreshTokens(ctx context.Context, httpClient *http.Client, tokenEndpoint, clientID, clientSecret, refreshToken string) (OAuthTokens, error) {
+func RefreshTokens(ctx context.Context, httpClient *http.Client, guard *EndpointGuard, tokenEndpoint, clientID, clientSecret, refreshToken string) (OAuthTokens, error) {
 	form := url.Values{}
 	form.Set("grant_type", "refresh_token")
 	form.Set("refresh_token", refreshToken)
 	form.Set("client_id", clientID)
-	return postToken(ctx, httpClient, tokenEndpoint, clientID, clientSecret, form)
+	return postToken(ctx, httpClient, guard, tokenEndpoint, clientID, clientSecret, form)
 }
 
-func postToken(ctx context.Context, httpClient *http.Client, tokenEndpoint, clientID, clientSecret string, form url.Values) (OAuthTokens, error) {
+func postToken(ctx context.Context, httpClient *http.Client, guard *EndpointGuard, tokenEndpoint, clientID, clientSecret string, form url.Values) (OAuthTokens, error) {
+	if err := guard.CheckURL(tokenEndpoint); err != nil {
+		return OAuthTokens{}, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return OAuthTokens{}, err

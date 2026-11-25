@@ -88,7 +88,12 @@ func takeOAuthPending(state string) (oauthPending, bool) {
 
 // oauthHTTPClient 发现/DCR/换 token 用的出网客户端（走统一网络层：继承代理与超时）。
 func (s *mcpService) oauthHTTPClient(ctx context.Context, server model.MCPServer) *http.Client {
-	return s.clientFactory.NewHTTPClient(ctx, s.timeoutFor(ctx, server))
+	return s.oauthGuard(server).Client(s.clientFactory.NewHTTPClient(ctx, s.timeoutFor(ctx, server)))
+}
+
+// oauthGuard 授权流程用的出向守卫（发现 / DCR / 换 token 都按配置地址约束）。
+func (s *mcpService) oauthGuard(server model.MCPServer) *mcp.EndpointGuard {
+	return mcp.NewEndpointGuard(server.URL)
 }
 
 // OAuthDiscovery 找授权服务器（不写库，纯读）。
@@ -143,7 +148,7 @@ func (s *mcpService) OAuthStart(ctx context.Context, id int64, redirectURI, scop
 	}
 	if clientID == "" {
 		// DCR：拿不到就直接报错 → 界面给两个手填框（口径 16-11）
-		registeredID, registeredSecret, regErr := mcp.RegisterClient(ctx, s.oauthHTTPClient(ctx, server), meta, redirectURI, "krss")
+		registeredID, registeredSecret, regErr := mcp.RegisterClient(ctx, s.oauthHTTPClient(ctx, server), s.oauthGuard(server), meta, redirectURI, "krss")
 		if regErr != nil {
 			if errors.Is(regErr, mcp.ErrDCRUnsupported) {
 				return OAuthStartResult{}, fmt.Errorf("%w：请手填 client_id / client_secret 后重试", mcp.ErrDCRUnsupported)
@@ -197,7 +202,7 @@ func (s *mcpService) OAuthCallback(ctx context.Context, state, code string) (mod
 	if err != nil {
 		return model.MCPServer{}, err
 	}
-	tokens, err := mcp.ExchangeCode(ctx, s.oauthHTTPClient(ctx, server), pending.tokenEndpoint, pending.clientID, pending.clientSecret, code, pending.redirectURI, pending.verifier)
+	tokens, err := mcp.ExchangeCode(ctx, s.oauthHTTPClient(ctx, server), s.oauthGuard(server), pending.tokenEndpoint, pending.clientID, pending.clientSecret, code, pending.redirectURI, pending.verifier)
 	if err != nil {
 		s.markStatus(ctx, server, err, server.ToolCount, server.ResourceCount)
 		return model.MCPServer{}, err
@@ -301,7 +306,7 @@ func (s *mcpService) refreshOAuthTokens(ctx context.Context, server model.MCPSer
 			Suggestion: "点「重新授权」再走一次流程",
 		}}
 	}
-	tokens, err := mcp.RefreshTokens(ctx, s.oauthHTTPClient(ctx, server), tokenEndpoint, server.OAuthClientID, server.OAuthClientSecret, server.OAuthRefreshToken)
+	tokens, err := mcp.RefreshTokens(ctx, s.oauthHTTPClient(ctx, server), s.oauthGuard(server), tokenEndpoint, server.OAuthClientID, server.OAuthClientSecret, server.OAuthRefreshToken)
 	if err != nil {
 		return server, &oauthFailureError{failure: mcp.Classify(err, server.URL)}
 	}
