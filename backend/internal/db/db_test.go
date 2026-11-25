@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -86,4 +87,60 @@ func TestMigrate_ClosedDB(t *testing.T) {
 
 	err = db.Migrate(database)
 	require.Error(t, err)
+}
+
+// S5：数据目录和库文件不该让同机其它用户读到。
+func TestOpenCreatesPrivateDataDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 只有只读位，权限断言没有意义")
+	}
+	root := t.TempDir()
+	dbPath := filepath.Join(root, "nested", "deeper", "krss.db")
+
+	database, err := db.Open(dbPath)
+	require.NoError(t, err)
+	defer database.Close()
+
+	for _, dir := range []string{filepath.Join(root, "nested"), filepath.Join(root, "nested", "deeper")} {
+		info, err := os.Stat(dir)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "新建的数据目录应为 0700: %s", dir)
+	}
+
+	info, err := os.Stat(dbPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "库文件应为 0600")
+}
+
+// S5：已经跑过的部署，目录/库文件原先按 0755/umask 建 —— 打开时收紧。
+func TestOpenTightensExistingLoosePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 只有只读位，权限断言没有意义")
+	}
+	root := t.TempDir()
+	dir := filepath.Join(root, "data")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.Chmod(dir, 0o755))
+	dbPath := filepath.Join(dir, "krss.db")
+
+	database, err := db.Open(dbPath)
+	require.NoError(t, err)
+	defer database.Close()
+
+	dirInfo, err := os.Stat(dir)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm(), "已存在的宽目录应被收紧到 0700")
+
+	fileInfo, err := os.Stat(dbPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), fileInfo.Mode().Perm(), "库文件应被收紧到 0600")
+
+	// WAL 伴随文件跟着一起收紧（存在才断言）
+	for _, suffix := range []string{"-wal", "-shm"} {
+		info, err := os.Stat(dbPath + suffix)
+		if err != nil {
+			continue
+		}
+		require.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "%s 应被收紧到 0600", suffix)
+	}
 }
