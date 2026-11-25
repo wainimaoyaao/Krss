@@ -380,6 +380,10 @@ func strPtrEq(a, b *string) bool {
 
 var ErrAlreadyRefreshing = errors.New("refresh already in progress")
 
+// ErrRefreshPartial indicates that the refresh round ran, but at least one
+// feed failed. Per-feed details remain available through LastRefreshResults.
+var ErrRefreshPartial = errors.New("refresh completed with failures")
+
 // RefreshStatus holds the current state of the feed refresh process.
 type RefreshStatus struct {
 	IsRefreshing    bool
@@ -500,24 +504,15 @@ func (s *refreshService) classifyFetchFailure(ctx context.Context, feed model.Fe
 }
 
 func (s *refreshService) RefreshAll(ctx context.Context) error {
-	s.mu.Lock()
-	s.lastTrigger = "manual"
-	s.mu.Unlock()
 	return s.refreshAll(ctx, false, false)
 }
 
 // ForceRefreshAll 见接口注释。
 func (s *refreshService) ForceRefreshAll(ctx context.Context) error {
-	s.mu.Lock()
-	s.lastTrigger = "manual"
-	s.mu.Unlock()
 	return s.refreshAll(ctx, true, false)
 }
 
 func (s *refreshService) RefreshAllAuto(ctx context.Context) error {
-	s.mu.Lock()
-	s.lastTrigger = "auto"
-	s.mu.Unlock()
 	return s.refreshAll(ctx, false, true)
 }
 
@@ -528,7 +523,9 @@ func (s *refreshService) refreshAll(ctx context.Context, force bool, auto bool) 
 		return ErrAlreadyRefreshing
 	}
 	s.isRefreshing = true
-	if s.lastTrigger == "" {
+	if auto {
+		s.lastTrigger = "auto"
+	} else {
 		s.lastTrigger = "manual"
 	}
 	startedAt := time.Now()
@@ -558,13 +555,17 @@ func (s *refreshService) refreshAll(ctx context.Context, force bool, auto bool) 
 		feeds = s.applyRefreshBackoff(feeds)
 	}
 	s.refreshFeedsWithRateLimit(ctx, feeds, force)
-	logger.Info("refresh completed", "module", "service", "action", "refresh", "resource", "feed", "result", "ok", "count", len(feeds))
 
 	now := time.Now()
 	s.mu.Lock()
 	s.lastRefreshedAt = &now
 	s.mu.Unlock()
 
+	if s.refreshHadFailures() {
+		logger.Warn("refresh completed with failures", "module", "service", "action", "refresh", "resource", "feed", "result", "partial", "count", len(feeds))
+		return ErrRefreshPartial
+	}
+	logger.Info("refresh completed", "module", "service", "action", "refresh", "resource", "feed", "result", "ok", "count", len(feeds))
 	return nil
 }
 
@@ -614,17 +615,11 @@ func (s *refreshService) RefreshFeed(ctx context.Context, feedID int64) error {
 }
 
 func (s *refreshService) RefreshFeeds(ctx context.Context, feedIDs []int64) error {
-	s.mu.Lock()
-	s.lastTrigger = "manual"
-	s.mu.Unlock()
 	return s.refreshFeeds(ctx, feedIDs, false)
 }
 
 // ForceRefreshFeeds 见接口注释。
 func (s *refreshService) ForceRefreshFeeds(ctx context.Context, feedIDs []int64) error {
-	s.mu.Lock()
-	s.lastTrigger = "manual"
-	s.mu.Unlock()
 	return s.refreshFeeds(ctx, feedIDs, true)
 }
 
@@ -671,6 +666,10 @@ func (s *refreshService) refreshFeeds(ctx context.Context, feedIDs []int64, forc
 	s.resetRefreshProgress(len(feeds))
 	s.resetRefreshResults()
 	s.refreshFeedsWithRateLimit(ctx, feeds, force)
+	if s.refreshHadFailures() {
+		logger.Warn("partial feed refresh completed with failures", "module", "service", "action", "refresh", "resource", "feed", "result", "partial", "scope", "partial", "count", len(feeds))
+		return ErrRefreshPartial
+	}
 	logger.Info("refresh completed", "module", "service", "action", "refresh", "resource", "feed", "result", "ok", "scope", "partial", "count", len(feeds),
 		"concurrency", cfg.Concurrency, "per_host_concurrency", cfg.PerHostConcurrency, "timeout_ms", cfg.Timeout.Milliseconds(), "force", force)
 	return nil
@@ -743,6 +742,17 @@ func (s *refreshService) LastRefreshResults() []RefreshFeedResult {
 	out := make([]RefreshFeedResult, len(s.lastResults))
 	copy(out, s.lastResults)
 	return out
+}
+
+func (s *refreshService) refreshHadFailures() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, result := range s.lastResults {
+		if result.Error != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // iconPathOf 结果弹框要带订阅图标；没有图标就留空（前端退化成默认 RSS 图标）。

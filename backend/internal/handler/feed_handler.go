@@ -863,7 +863,7 @@ func (h *FeedHandler) RefreshAll(c echo.Context) error {
 			} else {
 				refreshErr = h.refreshService.RefreshFeeds(bgCtx, ids)
 			}
-			if err := refreshErr; err != nil && !errors.Is(err, service.ErrAlreadyRefreshing) {
+			if err := refreshErr; err != nil && !errors.Is(err, service.ErrAlreadyRefreshing) && !errors.Is(err, service.ErrRefreshPartial) {
 				logger.Error("feed refresh failed", "module", "handler", "action", "refresh", "resource", "feed", "result", "failed", "count", len(ids), "error", err)
 			}
 			h.finishRefresh()
@@ -885,7 +885,7 @@ func (h *FeedHandler) RefreshAll(c echo.Context) error {
 		} else {
 			err = h.refreshService.RefreshAll(bgCtx)
 		}
-		if err != nil && !errors.Is(err, service.ErrAlreadyRefreshing) {
+		if err != nil && !errors.Is(err, service.ErrAlreadyRefreshing) && !errors.Is(err, service.ErrRefreshPartial) {
 			logger.Error("feed refresh failed", "module", "handler", "action", "refresh", "resource", "feed", "result", "failed", "error", err)
 		}
 		h.finishRefresh()

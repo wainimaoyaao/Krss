@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -102,6 +103,14 @@ func (s *Scheduler) refresh() {
 
 	logger.Info("scheduled feed refresh started", "module", "scheduler", "action", "refresh", "resource", "feed", "result", "ok")
 	if err := s.refreshService.RefreshAllAuto(ctx); err != nil {
+		if errors.Is(err, service.ErrAlreadyRefreshing) {
+			logger.Info("scheduled feed refresh skipped", "module", "scheduler", "action", "refresh", "resource", "feed", "result", "skipped", "reason", "already_refreshing")
+			return
+		}
+		if errors.Is(err, service.ErrRefreshPartial) {
+			logger.Warn("scheduled feed refresh completed with failures", "module", "scheduler", "action", "refresh", "resource", "feed", "result", "partial")
+			return
+		}
 		if ctx.Err() != nil {
 			logger.Warn("scheduled refresh cancelled", "module", "scheduler", "action", "refresh", "resource", "feed", "result", "cancelled")
 			return

@@ -43,6 +43,33 @@ func TestRefreshService_RefreshAll_AlreadyRefreshing(t *testing.T) {
 	require.ErrorIs(t, err, service.ErrAlreadyRefreshing)
 }
 
+func TestRefreshService_RefreshAll_PartialResultReturnsError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockFeeds := mock.NewMockFeedRepository(ctrl)
+	mockFeeds.EXPECT().List(gomock.Any(), (*int64)(nil)).Return([]model.Feed{{ID: 1, URL: "https://example.com/rss", Title: "Feed"}}, nil)
+	mockFeeds.EXPECT().UpdateRSSRefreshStatus(gomock.Any(), int64(1), "https://example.com/rss", gomock.Any()).Return(nil).AnyTimes()
+
+	svc := service.NewRefreshService(
+		mockFeeds,
+		mock.NewMockEntryRepository(ctrl),
+		nil,
+		nil,
+		network.NewClientFactoryForTest(&http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("upstream down")
+		})}),
+		nil,
+		nil,
+		nil,
+	)
+
+	err := svc.RefreshAll(context.Background())
+	require.ErrorIs(t, err, service.ErrRefreshPartial)
+	require.Len(t, svc.LastRefreshResults(), 1)
+	require.Contains(t, svc.LastRefreshResults()[0].Error, "upstream down")
+}
+
 func TestRefreshService_RefreshAll_ListError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
