@@ -1,0 +1,4 @@
+('create attacker-sse', 201)
+('test attacker-sse', 200, 'mcp endpoint is not allowed: 本机服务的会话不许打到 localhost')
+('create legit-mcp', 201)
+('test legit-mcp', 200, '{"name": null, "toolCount": 1, "error": null}')
