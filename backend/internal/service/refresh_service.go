@@ -250,6 +250,15 @@ func (s *refreshService) processParsedFeed(ctx context.Context, feed model.Feed,
 	return nil
 }
 
+// iconRefreshBudget 刷新路径上给图标抓取的时间上限。
+//
+// 为什么需要它：图标抓取会依次尝试 RSS 图片、站点 favicon、首页里声明的图标，最后是
+// Google / DuckDuckGo 的 favicon 兜底 —— 这几步在「站点没有图标」或「出网受限」时全都
+// 会各自耗到超时。它挂在刷新轮次的收尾路径上，于是整轮回合的耗时被它决定：实测本机
+// 受控源（本地即时响应的 RSS、200 条条目、站点没有 favicon）单轮 10.4–12.3 秒，而把
+// 条目数从 200 降到 50 一秒都不省。3 秒够抓到正常的 favicon，抓不到就下一轮再试。
+const iconRefreshBudget = 3 * time.Second
+
 // Run rules and fetch icons only after the database writes have finished.
 func (s *refreshService) postProcessEntries(ctx context.Context, feed model.Feed, newCount, updatedCount int, newEntries []model.Entry, siteURL, imageURL string) {
 	s.recordFeedResult(RefreshFeedResult{
@@ -277,8 +286,20 @@ func (s *refreshService) postProcessEntries(ctx context.Context, feed model.Feed
 	// 1) 没有图标时照旧补一个；
 	// 2) 已有通用 favicon 但插件（如 GitHub 头像）认领了这条订阅时，插件头像会替换它。
 	// FetchAndSaveIconForFeed 内部对「已是目标头像」会直接命中缓存文件，不会重复下载。
+	//
+	// 图标抓取有它自己的时间预算：它是「锦上添花」，而这条调用在刷新轮次的收尾路径上 ——
+	// 站点的 favicon / 首页 / 第三方兜底服务全都不可达时，原来的做法是把整轮刷新拖到
+	// 十几秒（实测本机受控源：单轮 10.4–12.3 秒，且与条目数无关），而这份时间换来的
+	// 可能只是一个空图标。超时就放弃这次，下一轮还有机会。
 	if s.icons != nil {
-		if iconPath, err := s.icons.FetchAndSaveIconForFeed(ctx, feed.ID, imageURL, siteURL); err == nil && iconPath != "" {
+		iconCtx, cancel := context.WithTimeout(ctx, iconRefreshBudget)
+		iconPath, err := s.icons.FetchAndSaveIconForFeed(iconCtx, feed.ID, imageURL, siteURL)
+		timedOut := iconCtx.Err() != nil
+		cancel()
+		if timedOut {
+			logger.Debug("icon refresh skipped by budget", "module", "service", "action", "fetch", "resource", "icon", "feed_id", feed.ID, "budget_ms", iconRefreshBudget.Milliseconds())
+		}
+		if err == nil && iconPath != "" {
 			if feed.IconPath == nil || *feed.IconPath != iconPath {
 				if err := s.feeds.UpdateIconPath(ctx, feed.ID, iconPath); err == nil {
 					p := iconPath
