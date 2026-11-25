@@ -1,6 +1,7 @@
 package handler_test
 
 import (
+	"context"
 	"io/fs"
 	"net/http"
 	"testing"
@@ -8,10 +9,12 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"krss/backend/internal/handler"
 	"krss/backend/internal/plugin"
 	"krss/backend/internal/service"
+	servicemock "krss/backend/internal/service/mock"
 )
 
 // uiAssetsPlugin test-only 假插件：自带一份界面资源（56-24）。
@@ -127,4 +130,35 @@ func TestPluginUIHandler_Traversal(t *testing.T) {
 	// 未知插件 404（不是 400，也不是 500）
 	rec := doJSON(e, http.MethodGet, "/api/plugins/ghost/ui/index.html", "")
 	require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
+}
+
+// S7：外部插件那条轨（宿主把 /ui/ 转发到插件 socket）也必须带同样的沙箱响应头 ——
+// 之前只有内置轨的用例，转发轨的头是「代码里有、但没人钉住」。
+func TestPluginUIHandler_ExternalTrackHeaders(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	svc := servicemock.NewMockPluginService(ctrl)
+	svc.EXPECT().UIAssets(gomock.Any(), "ext-demo").Return(service.PluginUIAssets{
+		Proxy: func(context.Context, string) (plugin.UIAssetFile, error) {
+			return plugin.UIAssetFile{
+				Body:        []byte("<!doctype html><title>ext</title>"),
+				ContentType: "text/html; charset=utf-8",
+			}, nil
+		},
+	}, nil).AnyTimes()
+
+	e := echo.New()
+	handler.NewPluginHandler(svc).RegisterRoutes(e.Group("/api"))
+
+	rec := doJSON(e, http.MethodGet, "/api/plugins/ext-demo/ui/index.html", "")
+	body := rec.Body.String()
+	require.Equal(t, http.StatusOK, rec.Code, body)
+	require.Equal(t, "<!doctype html><title>ext</title>", body)
+
+	csp := rec.Header().Get("Content-Security-Policy")
+	require.NotEmpty(t, csp, "转发轨也必须带 CSP")
+	require.NotContains(t, csp, "'self'")
+	require.Contains(t, csp, "connect-src 'none'")
+	require.Contains(t, csp, "form-action 'none'")
+	require.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+	require.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 }

@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"html"
 	"net/http"
 	"strconv"
 	"strings"
@@ -79,22 +80,22 @@ type mcpServerRequest struct {
 }
 
 type mcpServerResponse struct {
-	ID            string            `json:"id"`
-	Name          string            `json:"name"`
-	Transport     string            `json:"transport"`
-	URL           string            `json:"url"`
-	AuthType      string            `json:"authType"`
-	Headers       map[string]string `json:"headers,omitempty"`
-	Enabled       bool              `json:"enabled"`
-	IsConnected   bool              `json:"isConnected"`
-	LastError     *string           `json:"lastError,omitempty"`
-	ToolCount     int               `json:"toolCount"`
-	ResourceCount int               `json:"resourceCount"`
-	Purposes      []string          `json:"purposes"`
-	UseGlobalFetch         bool  `json:"useGlobalFetch"`
-	FetchTimeoutSeconds    *int  `json:"fetchTimeoutSeconds,omitempty"`
-	FetchConcurrency       *int  `json:"fetchConcurrency,omitempty"`
-	RefreshIntervalMinutes *int  `json:"refreshIntervalMinutes,omitempty"`
+	ID                     string            `json:"id"`
+	Name                   string            `json:"name"`
+	Transport              string            `json:"transport"`
+	URL                    string            `json:"url"`
+	AuthType               string            `json:"authType"`
+	Headers                map[string]string `json:"headers,omitempty"`
+	Enabled                bool              `json:"enabled"`
+	IsConnected            bool              `json:"isConnected"`
+	LastError              *string           `json:"lastError,omitempty"`
+	ToolCount              int               `json:"toolCount"`
+	ResourceCount          int               `json:"resourceCount"`
+	Purposes               []string          `json:"purposes"`
+	UseGlobalFetch         bool              `json:"useGlobalFetch"`
+	FetchTimeoutSeconds    *int              `json:"fetchTimeoutSeconds,omitempty"`
+	FetchConcurrency       *int              `json:"fetchConcurrency,omitempty"`
+	RefreshIntervalMinutes *int              `json:"refreshIntervalMinutes,omitempty"`
 	// LastTransport 上次成功的传输（transport='auto' 时下次优先试它 —— 16-10）
 	LastTransport string `json:"lastTransport,omitempty"`
 	// OAuth 状态（16-11：secret/token 只出掩码，真值永不出接口）
@@ -104,25 +105,25 @@ type mcpServerResponse struct {
 	OAuthExpiresAt    *string `json:"oauthExpiresAt,omitempty"`
 	OAuthAuthServer   string  `json:"oauthAuthServer,omitempty"`
 	// LastFailure 结构化失败（16-12：列表行/测试/预览三处共用）
-	LastFailure  *model.MCPFailure `json:"lastFailure,omitempty"`
-	LastUsedAt   *string           `json:"lastUsedAt,omitempty"`
-	CreatedAt    string            `json:"createdAt"`
-	UpdatedAt    string            `json:"updatedAt"`
+	LastFailure *model.MCPFailure `json:"lastFailure,omitempty"`
+	LastUsedAt  *string           `json:"lastUsedAt,omitempty"`
+	CreatedAt   string            `json:"createdAt"`
+	UpdatedAt   string            `json:"updatedAt"`
 }
 
 type mcpInspectRequest struct {
-	Kind        string                `json:"kind"`
-	ToolName    string                `json:"toolName"`
-	ResourceURI string                `json:"resourceUri"`
-	Arguments   map[string]any        `json:"arguments"`
-	Limit       int                   `json:"limit"`
+	Kind        string                 `json:"kind"`
+	ToolName    string                 `json:"toolName"`
+	ResourceURI string                 `json:"resourceUri"`
+	Arguments   map[string]any         `json:"arguments"`
+	Limit       int                    `json:"limit"`
 	Mapping     *model.MCPFieldMapping `json:"mapping"`
-	Tier        string                `json:"tier"`
+	Tier        string                 `json:"tier"`
 }
 
 type mcpOutboundOptionsRequest struct {
-	Enabled      bool   `json:"enabled"`
-	WriteEnabled bool   `json:"writeEnabled"`
+	Enabled      bool `json:"enabled"`
+	WriteEnabled bool `json:"writeEnabled"`
 	// BaseURL 对外访问地址（用户填的公网/局域网可达 origin；空字符串 = 清掉）。
 	BaseURL string `json:"baseUrl"`
 }
@@ -524,6 +525,11 @@ func (h *MCPHandler) OAuthCallback(c echo.Context) error {
 }
 
 // oauthCallbackPage 回调结果页（不含任何秘密，关掉即可，前端轮询状态）。
+//
+// message 可能来自请求参数（`?error=`）或上游错误串，**都可能带攻击者的 HTML**，
+// 所以拼进页面前一律 html.EscapeString：这里是本应用同源返回的页面，未转义等于
+// 让第三方站点借一个链接触发本源的脚本执行。标题是常量，也同样过一遍，省得以后
+// 被改成可变文本时漏掉。
 func oauthCallbackPage(ok bool, message string) string {
 	title := "MCP 授权成功"
 	desc := "可以关掉这一页，回到 Krss 里点「测试连接」验证。"
@@ -531,9 +537,11 @@ func oauthCallbackPage(ok bool, message string) string {
 		title = "MCP 授权失败"
 		desc = message + " —— 关掉这一页，回到 Krss 重试。"
 	}
-	return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>` + title +
+	safeTitle := html.EscapeString(title)
+	safeDesc := html.EscapeString(desc)
+	return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>` + safeTitle +
 		`</title><style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:90vh;margin:0;color:#26262b}div{max-width:420px;text-align:center;line-height:1.7}h1{font-size:18px}</style></head><body><div><h1>` +
-		title + `</h1><p>` + desc + `</p></div></body></html>`
+		safeTitle + `</h1><p>` + safeDesc + `</p></div></body></html>`
 }
 
 // OAuthRevoke 撤销授权（清 token 与 secret）。
