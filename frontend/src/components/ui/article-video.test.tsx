@@ -53,7 +53,7 @@ describe("ArticleVideo 封面 + 悬停（§2.25）", () => {
   it("悬停 → 调 play；移开 → pause（回封面）", () => {
     const { container, video } = mountVideo();
     primeDuration(video);
-    const btn = screen.getByRole("button", { name: "播放视频" });
+    const btn = screen.getByRole("button", { name: "entry.video_open_player" });
 
     fireEvent.mouseEnter(btn);
     expect(playMock).toHaveBeenCalledTimes(1);
@@ -72,7 +72,7 @@ describe("ArticleVideo 封面 + 悬停（§2.25）", () => {
 
   it("timeupdate 推进播放头（Slider 的值 = currentTime，maxValue = duration）", () => {
     const { container, video } = mountVideo();
-    const btn = screen.getByRole("button", { name: "播放视频" });
+    const btn = screen.getByRole("button", { name: "entry.video_open_player" });
     fireEvent.mouseEnter(btn);
     primeDuration(video, 10);
 
@@ -88,7 +88,7 @@ describe("ArticleVideo 封面 + 悬停（§2.25）", () => {
 
   it("duration 未到齐时不渲染 Slider（没有刻度可跳）", () => {
     const { container } = mountVideo();
-    const btn = screen.getByRole("button", { name: "播放视频" });
+    const btn = screen.getByRole("button", { name: "entry.video_open_player" });
     fireEvent.mouseEnter(btn);
     expect(
       container.querySelector('[data-slot="article-video-controls"]'),
@@ -97,7 +97,7 @@ describe("ArticleVideo 封面 + 悬停（§2.25）", () => {
 
   it("拖拽进度条 → 直接 seek（currentTime 跟着改）", () => {
     const { container, video } = mountVideo();
-    const btn = screen.getByRole("button", { name: "播放视频" });
+    const btn = screen.getByRole("button", { name: "entry.video_open_player" });
     fireEvent.mouseEnter(btn);
     primeDuration(video, 30);
 
@@ -112,7 +112,7 @@ describe("ArticleVideo 封面 + 悬停（§2.25）", () => {
 
   it("控制条上的播放/暂停钮切 play/pause（不是打开大屏）", async () => {
     const { container } = mountVideo();
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "播放视频" }));
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "entry.video_open_player" }));
     const video = container.querySelector("video") as HTMLVideoElement;
     primeDuration(video);
 
@@ -141,7 +141,7 @@ describe("ArticleVideo 封面 + 悬停（§2.25）", () => {
 
   it("控制条里的按钮不是嵌套 button（外层是 div[role=button]）", () => {
     const { container, video } = mountVideo();
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "播放视频" }));
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "entry.video_open_player" }));
     primeDuration(video);
 
     const card = container.querySelector(".article-video") as HTMLElement;
@@ -155,7 +155,7 @@ describe("ArticleVideo 封面 + 悬停（§2.25）", () => {
 
   it("控制条按钮不吃卡片点击（不会误开大屏）", () => {
     const { container, video } = mountVideo();
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "播放视频" }));
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "entry.video_open_player" }));
     primeDuration(video);
 
     // 事件冒泡到容器时会被 closest(controls) 拦下 → 控制条仍在（没被换成大屏播放器）
@@ -200,7 +200,7 @@ describe("ArticleVideo 封面 + 悬停（§2.25）", () => {
     const { container } = mountVideo();
     const video = container.querySelector("video") as HTMLVideoElement;
     fireEvent.error(video);
-    const btn = screen.getByRole("button", { name: "播放视频" });
+    const btn = screen.getByRole("button", { name: "entry.video_open_player" });
     expect(btn.className).toContain("bg-secondary");
     expect(btn.className).not.toContain("bg-black");
     // 兜底出口

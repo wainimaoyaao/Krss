@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
 interface BackToTopButtonProps {
   scrollNode: HTMLDivElement;
@@ -10,6 +11,7 @@ export function BackToTopButton({
   scrollNode,
   threshold = 300,
 }: BackToTopButtonProps) {
+  const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export function BackToTopButton({
           ? "opacity-100 translate-y-0"
           : "opacity-0 translate-y-4 pointer-events-none",
       )}
-      aria-label="Back to top"
+      aria-label={t("entry_list.back_to_top")}
     >
       <svg
         className="size-5"

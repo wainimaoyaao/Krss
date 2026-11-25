@@ -43,7 +43,7 @@ describe("SocialMediaGallery", () => {
       </div>,
     );
 
-    const buttons = screen.getAllByRole("button", { name: "查看大图" });
+    const buttons = screen.getAllByRole("button", { name: "entry_list.view_image" });
     expect(buttons).toHaveLength(2);
 
     fireEvent.click(buttons[0]!);
@@ -63,7 +63,7 @@ describe("SocialMediaGallery", () => {
       </div>,
     );
 
-    fireEvent.click(screen.getAllByRole("button", { name: "查看大图" })[1]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "entry_list.view_image" })[1]!);
 
     expect(onOpenImage).toHaveBeenCalledTimes(1);
     expect(onOpenImage.mock.calls[0]?.[1]).toBe(1);

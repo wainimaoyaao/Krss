@@ -730,7 +730,7 @@ export function Sidebar({
 
                 {listBoxMode ? (
                   <ListBox
-                    aria-label="feeds"
+                    aria-label={t("sidebar.feeds")}
                     selectionMode="single"
                     selectedKeys={selectedFeedKeys}
                     onAction={(key) => onSelectFeed(String(key))}

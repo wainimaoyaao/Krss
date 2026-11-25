@@ -16,6 +16,7 @@ import {
   withProxyCacheBust,
 } from "@/lib/proxy-image-recovery";
 import { useImageDimensionsStore } from "@/stores/image-dimensions-store";
+import { useTranslation } from "react-i18next";
 
 /**
  * 社交媒体视图的图片区（第四十二批 · §2.40）。
@@ -75,6 +76,7 @@ const GalleryImage = memo(function GalleryImage({
   box,
   onOpen,
 }: GalleryImageProps) {
+  const { t } = useTranslation();
   const setDimension = useImageDimensionsStore((state) => state.setDimension);
   const markFailed = useImageDimensionsStore((state) => state.markFailed);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -132,7 +134,7 @@ const GalleryImage = memo(function GalleryImage({
         !box && "aspect-square w-full",
       )}
       style={box ? { width: box.width, height: box.height } : undefined}
-      aria-label="查看大图"
+      aria-label={t("entry_list.view_image")}
     >
       <img
         ref={imgRef}

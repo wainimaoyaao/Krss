@@ -389,7 +389,8 @@
     "translate_timeout": "Translation timed out, please try again",
     "summary_translating": "Translating summary…",
     "summary_translate_failed": "Summary translation failed",
-    "summary_translated": "Summary translated"
+    "summary_translated": "Summary translated",
+    "video_open_player": "Play video"
   },
   "ai_settings": {
     "translate_channel": "Free translation channels",
@@ -904,7 +905,8 @@
     "feed": "Feed",
     "folder": "Folder",
     "no_articles": "No articles",
-    "back_to_top": "Back to top"
+    "back_to_top": "Back to top",
+    "view_image": "View image"
   },
   "update": {
     "available": "Update Available",

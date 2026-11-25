@@ -313,7 +313,7 @@ export function ArticleVideo({
           event.stopPropagation();
           handleOpen();
         }}
-        aria-label="播放视频"
+        aria-label={t("entry.video_open_player")}
         className="article-video group/video relative block w-full cursor-pointer overflow-hidden rounded-lg bg-secondary"
       >
         {/* 源 HTML 常带 controls，这里丢掉：就地只当封面/悬停预览，点了开大屏播放器 */}
