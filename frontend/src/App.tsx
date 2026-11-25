@@ -12,7 +12,10 @@ import {
   SETTINGS_SAVED_EVENT,
   SETTINGS_SYNC_FAILED_EVENT,
 } from "@/lib/settings-saved";
-import { SETTINGS_MOBILE_BREAKPOINT, initSettingsSync } from "@/lib/settings-sync";
+import {
+  SETTINGS_MOBILE_BREAKPOINT,
+  initSettingsSync,
+} from "@/lib/settings-sync";
 import { requestEntriesHeadSync } from "@/lib/entries-head-sync";
 import { showToast } from "@/stores/toast-store";
 import { ThreeColumnLayout } from "@/components/layout/three-column-layout";
@@ -38,35 +41,26 @@ import { MenuIcon, SearchIcon } from "@/components/ui/icons";
 import { ScrollToTopZone } from "@/components/layout/ScrollToTopZone";
 import { ImagePreview } from "@/components/ui/image-preview";
 import { LoginPage, RegisterPage, NetworkErrorPage } from "@/components/auth";
-import { UpdateNotice } from "@/components/update-notice";
-import { Toaster } from "@/components/ui/toaster";
-import { RefreshReportDialog } from "@/components/refresh/RefreshReportDialog";
+import {
+  EntryContentFallback,
+  EntryContentPlaceholder,
+  LoadingScreen,
+} from "@/components/app-shell/AppStates";
+import { AppOverlays } from "@/components/app-shell/AppOverlays";
 import { useRefreshReportWatcher } from "@/hooks/useRefreshReportWatcher";
-import { FilterEditorDialog } from "@/components/automation/FilterEditorDialog";
-import { PluginActionDialog } from "@/plugins/PluginSlot";
 import { PluginViewOutlet } from "@/plugins/PluginViewPane";
 import { usePluginViewRoute } from "@/plugins/usePluginViewRoute";
-import { SettingsModal, ProfileModal } from "@/components/settings";
-import { EditFeedDialog } from "@/components/settings/tabs/EditFeedDialog";
-import { useEditingFeedStore } from "@/stores/editing-feed-store";
 import {
   isSameSelection,
   useFeedJumpBackStore,
 } from "@/stores/feed-jump-back-store";
-import {
-  useSettingsModalStore,
-  useProfileModalStore,
-} from "@/stores/settings-modal-store";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { refreshAllFeeds } from "@/api";
 import { ShortcutsHelpDialog } from "@/components/shortcuts/ShortcutsHelpDialog";
 import { SearchModal } from "@/components/search/SearchModal";
 import { VideoPreview } from "@/components/ui/video-preview";
 import { useGlobalHotkeys } from "@/hooks/useGlobalHotkeys";
-import {
-  shortcutsHelp,
-  useShortcutsHelpOpen,
-} from "@/stores/shortcuts-store";
+import { shortcutsHelp, useShortcutsHelpOpen } from "@/stores/shortcuts-store";
 import { useSelection, selectionToParams } from "@/hooks/useSelection";
 import { useMarkAllAsRead, useEntry } from "@/hooks/useEntries";
 import { useMobileLayout } from "@/hooks/useMobileLayout";
@@ -106,73 +100,6 @@ const LazyEntryContent = lazy(async () => {
   const module = await import("@/components/entry-content");
   return { default: module.EntryContent };
 });
-
-function LoadingScreen() {
-  const { t } = useTranslation();
-  return (
-    <div className="flex h-full w-full items-center justify-center overflow-x-clip bg-background">
-      <div className="flex flex-col items-center gap-4">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-        <p className="text-sm text-muted-foreground">{t("entry.loading")}</p>
-      </div>
-    </div>
-  );
-}
-
-function EntryContentPlaceholder({ message }: { message: string }) {
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex h-12 items-center px-6" />
-      <div className="flex flex-1 items-center justify-center">
-        <div className="flex flex-col items-center gap-2 text-center text-muted-foreground opacity-60">
-          <svg
-            className="size-16"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-            />
-          </svg>
-          <p className="text-sm">{message}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EntryContentFallback() {
-  return (
-    <div className="relative flex h-full flex-col animate-pulse">
-      <div className="absolute inset-x-0 top-0 z-20">
-        <div className="h-12" />
-      </div>
-      <div className="flex-1 overflow-auto">
-        <div className="mx-auto w-full max-w-[720px] px-6 pb-20 pt-16">
-          <div className="mb-10 space-y-5">
-            <div className="h-10 w-3/4 rounded bg-secondary" />
-            <div className="flex gap-6">
-              <div className="h-4 w-24 rounded bg-secondary" />
-              <div className="h-4 w-32 rounded bg-secondary" />
-            </div>
-            <hr className="border-border/60" />
-          </div>
-          <div className="space-y-4">
-            <div className="h-4 w-full rounded bg-secondary" />
-            <div className="h-4 w-full rounded bg-secondary" />
-            <div className="h-4 w-3/4 rounded bg-secondary" />
-            <div className="h-4 w-full rounded bg-secondary" />
-            <div className="h-4 w-5/6 rounded bg-secondary" />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function AuthenticatedApp() {
   const [location, navigate] = useLocation();
@@ -354,9 +281,7 @@ function AuthenticatedApp() {
 
   const handleSelectFeed = useCallback(
     (feedId: string) => {
-      jumpToTopOnWeb(
-        selectionScrollKey({ type: "feed", feedId }, contentType),
-      );
+      jumpToTopOnWeb(selectionScrollKey({ type: "feed", feedId }, contentType));
       closeSidebar();
       selectFeed(feedId, { replace: true });
     },
@@ -438,9 +363,7 @@ function AuthenticatedApp() {
 
   const handleSelectAll = useCallback(
     (type?: ContentType) => {
-      jumpToTopOnWeb(
-        selectionScrollKey({ type: "all" }, type ?? contentType),
-      );
+      jumpToTopOnWeb(selectionScrollKey({ type: "all" }, type ?? contentType));
       closeSidebar();
       selectAll(type, { replace: true });
     },
@@ -705,7 +628,10 @@ function AuthenticatedApp() {
    */
   if (pluginViewRoute.resolution.status !== "none") {
     /** 沙箱里的「切视图 / 打开条目」：条目走宿主的选中（会离开插件视图），视图就地在插件内切 */
-    const handlePluginNavigate = (target: { viewId?: string; entryId?: string }) => {
+    const handlePluginNavigate = (target: {
+      viewId?: string;
+      entryId?: string;
+    }) => {
       if (target.entryId) {
         selectEntry(target.entryId);
         return;
@@ -757,7 +683,9 @@ function AuthenticatedApp() {
               </button>
             </div>
           </header>
-          <div className="min-h-0 flex-1 overflow-hidden pb-[calc(4.5rem+env(safe-area-inset-bottom))]">{pluginOutlet}</div>
+          <div className="min-h-0 flex-1 overflow-hidden pb-[calc(4.5rem+env(safe-area-inset-bottom))]">
+            {pluginOutlet}
+          </div>
           <MobileTabBar
             contentType={contentType}
             visibleContentTypes={visibleContentTypes}
@@ -974,7 +902,7 @@ function AuthenticatedApp() {
                   onSelectFeedFromEntry={handleJumpToFeed}
                   feedJumpBackHref={jumpBackHref}
                   onBackFromFeedJump={handleBackFromFeedJump}
-                  />
+                />
               </section>
 
               {selectedEntryId && (
@@ -1087,7 +1015,7 @@ function AuthenticatedApp() {
         hideContent={isArticleHoverLayout && !selectedEntryId}
       />
       <ImagePreview />
-        <VideoPreview />
+      <VideoPreview />
       <ShortcutsHelpDialog
         open={isShortcutsOpen}
         onOpenChange={(open) => shortcutsHelp.set(open)}
@@ -1158,15 +1086,7 @@ function AppContent() {
 function App() {
   // 「减少动态效果」也要管住 framer-motion 的 JS 动画（CSS 覆盖只影响 CSS 动画）
   const reduceMotion = useUISettingKey("reduceMotion");
-  const isSettingsOpen = useSettingsModalStore((state) => state.open);
-  const setSettingsOpen = useSettingsModalStore((state) => state.setOpen);
-  const isProfileOpen = useProfileModalStore((state) => state.open);
-  const setProfileOpen = useProfileModalStore((state) => state.setOpen);
-  // 订阅「编辑」弹窗：挂在这里（与设置弹窗平级），不挂 Sidebar 里 ——
-  // 移动端 Sidebar 装在 Sheet 里，Sheet 一关 Sidebar 就卸载，挂里面的弹窗会跟着消失
-  //（2026-09-20 移动端设置滑不动同根因）。开关走 store，第一栏与第二栏都能唤起。
-  const editingFeed = useEditingFeedStore((state) => state.feed);
-  const closeEditingFeed = useEditingFeedStore((state) => state.close);
+  // 全局弹窗层见 components/app-shell/AppOverlays.tsx（与侧栏 Sheet 平级的那条约束写在那里）。
 
   return (
     <div className="app-shell">
@@ -1174,29 +1094,7 @@ function App() {
         <TooltipProvider delayDuration={300}>
           <Router>
             <AppContent />
-            <UpdateNotice />
-            {/* 规则编辑器：设置页/订阅右键/条目右键都靠 filter-editor-store 唤起它 */}
-            <FilterEditorDialog />
-            {/* 插件动作的弹窗（参数表单 / 确认）：同样必须在顶层 ——
-                右键菜单一点就卸载，挂在菜单项里的弹窗会跟着消失 */}
-            <PluginActionDialog />
-            {/*
-             * 设置 / 资料弹窗挂在这里（与侧栏 Sheet 平级），不挂在 Sidebar 里 ——
-             * 移动端 Sidebar 装在 Sheet 里，Sheet 一关 Sidebar 就卸载，
-             * 挂在里面的弹窗会跟着消失；且 Sheet 的滚动锁会吃掉弹窗内容区的滚动
-             * （2026-09-20 移动端设置滑不动：sheet.tsx:26 + Combination 两处 preventDefault）。
-             */}
-            <SettingsModal open={isSettingsOpen} onOpenChange={setSettingsOpen} />
-            <ProfileModal open={isProfileOpen} onOpenChange={setProfileOpen} />
-            <EditFeedDialog
-              feed={editingFeed}
-              open={editingFeed !== null}
-              onOpenChange={(open) => {
-                if (!open) closeEditingFeed();
-              }}
-            />
-            <Toaster />
-            <RefreshReportDialog />
+            <AppOverlays />
           </Router>
         </TooltipProvider>
       </MotionConfig>

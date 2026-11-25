@@ -28,9 +28,14 @@ describe("settings/profile modal placement (mobile scroll regression 2026-09-20)
   });
 
   it("App 顶层挂载 SettingsModal / ProfileModal（与 Sheet 平级）", () => {
+    // F5 拆分后这份顶层挂载搬进了 components/app-shell/AppOverlays.tsx ——
+    // 约束本身没变（仍与侧栏 Sheet 平级、仍在 Router 里面），所以断言跟着落点走：
+    // App 必须渲染 AppOverlays，而 AppOverlays 里必须是这两个弹窗。
     const app = src("App.tsx");
-    expect(app).toContain("<SettingsModal open={isSettingsOpen}");
-    expect(app).toContain("<ProfileModal open={isProfileOpen}");
+    expect(app).toContain("<AppOverlays />");
+    const overlays = src("components/app-shell/AppOverlays.tsx");
+    expect(overlays).toContain("<SettingsModal open={isSettingsOpen}");
+    expect(overlays).toContain("<ProfileModal open={isProfileOpen}");
   });
 
   it("侧栏点设置/资料时先关 Sheet（onRequestClose 接 closeSidebar）", () => {
