@@ -636,6 +636,8 @@ func (s *refreshService) refreshFeeds(ctx context.Context, feedIDs []int64, forc
 		return ErrAlreadyRefreshing
 	}
 	s.isRefreshing = true
+	// 触发来源与准入同一把锁内写入：被拒绝的请求走不到这里，也就改不掉正在跑那一轮的来源。
+	s.lastTrigger = "manual"
 	startedAt := time.Now()
 	s.refreshStartedAt = &startedAt
 	s.mu.Unlock()

@@ -584,3 +584,54 @@ func TestRefreshService_ForceRefresh_SkipsConditionalHeaders(t *testing.T) {
 	require.NoError(t, svc.ForceRefreshAll(context.Background()))
 	require.False(t, sawConditional, "强制拉取不该带条件头（否则又拿到 304）")
 }
+
+// 被拒绝的手动刷新不许改写正在执行那一轮的 trigger（B6/B7：准入与来源标记同一把锁内完成）。
+func TestRefreshService_RejectedRequestKeepsRunningTrigger(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	svc := service.NewRefreshService(
+		mock.NewMockFeedRepository(ctrl),
+		mock.NewMockEntryRepository(ctrl),
+		nil,
+		nil,
+		network.NewClientFactoryForTest(&http.Client{}),
+		nil,
+		nil,
+		nil,
+	)
+	service.SetRefreshServiceRunningState(svc, true, "auto")
+
+	require.ErrorIs(t, svc.RefreshAll(context.Background()), service.ErrAlreadyRefreshing)
+	require.Equal(t, "auto", svc.GetRefreshStatus().Trigger, "被拒的手动刷新不该把 trigger 改成 manual")
+
+	require.ErrorIs(t, svc.RefreshFeeds(context.Background(), []int64{1}), service.ErrAlreadyRefreshing)
+	require.Equal(t, "auto", svc.GetRefreshStatus().Trigger)
+}
+
+// 范围刷新同样区分「跑完了但有源失败」与「全都成功」。
+func TestRefreshService_RefreshFeeds_PartialResultReturnsError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockFeeds := mock.NewMockFeedRepository(ctrl)
+	mockFeeds.EXPECT().GetByIDs(gomock.Any(), []int64{7}).Return([]model.Feed{{ID: 7, URL: "https://example.com/rss", Title: "Feed"}}, nil)
+	mockFeeds.EXPECT().UpdateRSSRefreshStatus(gomock.Any(), int64(7), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	svc := service.NewRefreshService(
+		mockFeeds,
+		mock.NewMockEntryRepository(ctrl),
+		nil,
+		nil,
+		network.NewClientFactoryForTest(&http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("upstream down")
+		})}),
+		nil,
+		nil,
+		nil,
+	)
+
+	require.ErrorIs(t, svc.RefreshFeeds(context.Background(), []int64{7}), service.ErrRefreshPartial)
+	require.Len(t, svc.LastRefreshResults(), 1)
+	require.Equal(t, "manual", svc.GetRefreshStatus().Trigger)
+}

@@ -74,6 +74,15 @@ func SetRefreshServiceRefreshing(s RefreshService, v bool) {
 	}
 }
 
+// SetRefreshServiceRunningState 把「正在刷新」与「上一轮触发来源」一起摆好，
+// 用来验证被拒绝的请求不会改写正在跑的那一轮的 trigger。
+func SetRefreshServiceRunningState(s RefreshService, refreshing bool, trigger string) {
+	if rs, ok := s.(*refreshService); ok {
+		rs.isRefreshing = refreshing
+		rs.lastTrigger = trigger
+	}
+}
+
 func BuildAISummarizeSystemPromptForTest(s AIService, ctx context.Context, entryID int64, title string) string {
 	if svc, ok := s.(*aiService); ok {
 		return svc.buildSummarizeSystemPrompt(ctx, entryID, title)
