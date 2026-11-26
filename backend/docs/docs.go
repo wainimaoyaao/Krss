@@ -1825,7 +1825,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter by content type (article, picture, notification, social)",
+                        "description": "Filter by content type (article, picture, notification, social, video, audio)",
                         "name": "contentType",
                         "in": "query"
                     },

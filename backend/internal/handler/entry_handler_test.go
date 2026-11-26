@@ -1,6 +1,7 @@
 package handler_test
 
 import (
+	"context"
 	"krss/backend/internal/handler"
 	"net/http"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"krss/backend/internal/model"
+	"krss/backend/internal/service"
 	"krss/backend/internal/service/mock"
 )
 
@@ -41,6 +43,40 @@ func TestEntryHandler_List_Success(t *testing.T) {
 	assertJSONResponse(t, rec, http.StatusOK, &resp)
 	require.Len(t, resp.Entries, 2)
 	require.False(t, resp.HasMore, "should not have more with 2 entries when limit is 10")
+}
+
+// TestEntryHandler_List_NewContentTypes 视频 / 音频两档在列表接口上是合法值，
+// 且原样透传给 service（回归：这两档是 2026-11-26 新加的，白名单漏一处就会被判 400）。
+func TestEntryHandler_List_NewContentTypes(t *testing.T) {
+	for _, contentType := range []string{"video", "audio"} {
+		t.Run(contentType, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockService := mock.NewMockEntryService(ctrl)
+			h := handler.NewEntryHandlerHelper(mockService, nil)
+
+			e := newTestEcho()
+			req := newJSONRequest(http.MethodGet, "/entries?contentType="+contentType, nil)
+			c, rec := newTestContext(e, req)
+
+			var got *string
+			mockService.EXPECT().
+				List(gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, params service.EntryListParams) ([]model.Entry, error) {
+					got = params.ContentType
+					return []model.Entry{}, nil
+				})
+
+			err := h.List(c)
+			require.NoError(t, err)
+
+			var resp handler.EntryListResponse
+			assertJSONResponse(t, rec, http.StatusOK, &resp)
+			require.NotNil(t, got)
+			require.Equal(t, contentType, *got)
+		})
+	}
 }
 
 func TestEntryHandler_List_HasMore(t *testing.T) {

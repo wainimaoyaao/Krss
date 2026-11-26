@@ -197,6 +197,10 @@ const (
 	keyNetworkIPStack   = "network.ip_stack"
 
 	keyAppearanceContentTypes = "appearance.content_types"
+	// keyAppearanceContentTypesVersion 上面那份列表的「口径版本」。
+	// 2 = 含 video / audio 两档（2026-11-26 新增），老库读到 0/1 时补一次并落库。
+	keyAppearanceContentTypesVersion = "appearance.content_types_version"
+	appearanceContentTypesVersion    = "2"
 
 	// 拉取（11-20）：频率与并发可配置。四个值都是「下一轮生效」的读法（不缓存到进程里），
 	// 用户改完不用重启；空值一律回落默认，越界值在写入时就夹紧。
@@ -1230,8 +1234,39 @@ func (s *settingsService) GetAppearanceSettings(ctx context.Context) (*Appearanc
 	if len(contentTypes) == 0 {
 		return settings, nil
 	}
+	contentTypes = s.upgradeContentTypes(ctx, contentTypes)
 	settings.ContentTypes = contentTypes
 	return settings, nil
+}
+
+// upgradeContentTypes 老库的「分类视图」列表里没有 video / audio 两档。
+//
+// 那两档是 2026-11-26 才有的新类型，老库存下来的数组自然不含它们；如果只在读取时
+// 原样返回，老用户既看不到侧栏的新分类、也没法在设置里把它们勾回来（设置里的顺序表
+// 就是这份数组）。所以按版本号补一次：版本 < 2 时把缺的类型按默认顺序追加到末尾，
+// 落库并标记版本 2；之后用户自己隐藏 video / audio 就不会再被加回来。
+func (s *settingsService) upgradeContentTypes(ctx context.Context, current []string) []string {
+	raw, err := s.getString(ctx, keyAppearanceContentTypesVersion)
+	if err == nil && strings.TrimSpace(raw) == appearanceContentTypesVersion {
+		return current
+	}
+	have := make(map[string]struct{}, len(current))
+	for _, item := range current {
+		have[item] = struct{}{}
+	}
+	merged := append([]string(nil), current...)
+	for _, item := range defaultAppearanceContentTypes {
+		if _, ok := have[item]; ok {
+			continue
+		}
+		merged = append(merged, item)
+	}
+	// 补完就落库：读接口顺带写一次，代价是一次 UPSERT，不必等用户去动设置。
+	if payload, err := json.Marshal(merged); err == nil {
+		_ = s.repo.Set(ctx, keyAppearanceContentTypes, string(payload))
+	}
+	_ = s.repo.Set(ctx, keyAppearanceContentTypesVersion, appearanceContentTypesVersion)
+	return merged
 }
 
 func (s *settingsService) SetAppearanceSettings(ctx context.Context, settings *AppearanceSettings) error {
@@ -1245,6 +1280,10 @@ func (s *settingsService) SetAppearanceSettings(ctx context.Context, settings *A
 	}
 	if err := s.repo.Set(ctx, keyAppearanceContentTypes, string(payload)); err != nil {
 		return fmt.Errorf("set appearance content types: %w", err)
+	}
+	// 用户手动存过就说明这份列表是「当前版本口径」，打上版本号，读接口不再补档。
+	if err := s.repo.Set(ctx, keyAppearanceContentTypesVersion, appearanceContentTypesVersion); err != nil {
+		return fmt.Errorf("set appearance content types version: %w", err)
 	}
 	return nil
 }
@@ -1265,11 +1304,13 @@ func normalizeContentTypes(values []string) []string {
 	return ordered
 }
 
-var defaultAppearanceContentTypes = []string{"article", "picture", "social", "notification"}
+// defaultAppearanceContentTypes 六档默认顺序：原有的四档在前，新加的 video / audio 追加在后，
+// 老用户升级时也是按这个顺序补到列表末尾（顺序即侧栏顺序，用户可拖）。
+var defaultAppearanceContentTypes = []string{"article", "picture", "notification", "social", "video", "audio"}
 
 func isValidAppearanceContentType(value string) bool {
 	switch value {
-	case "article", "picture", "notification", "social":
+	case "article", "picture", "notification", "social", "video", "audio":
 		return true
 	default:
 		return false

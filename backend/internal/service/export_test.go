@@ -46,6 +46,10 @@ const (
 	KeyNetworkPassword     = keyNetworkPassword
 	KeyNetworkIPStack      = keyNetworkIPStack
 	KeyFallbackUserAgent   = keyFallbackUserAgent
+	// 2026-11-26：内容类型六档（video / audio 新加），补档版本号也在测试里钉死
+	KeyAppearanceContentTypes        = keyAppearanceContentTypes
+	KeyAppearanceContentTypesVersion = keyAppearanceContentTypesVersion
+	AppearanceContentTypesVersion    = appearanceContentTypesVersion
 	// 21 批：界面设置整包（键名是对外契约，测试里钉死）
 	KeyUISettings     = keyUISettings
 	KeyUITheme        = keyUITheme

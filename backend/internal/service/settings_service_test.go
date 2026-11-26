@@ -201,6 +201,59 @@ func TestSettingsService_AppearanceSettings_Validate(t *testing.T) {
 	require.Equal(t, "article", settings.ContentTypes[1])
 }
 
+// TestSettingsService_AppearanceContentTypes_UpgradeLegacy 老库的四个类型数组要补成六档：
+// 2026-11-26 加 video / audio 时，老用户的 appearance.content_types 里没有这两项，
+// 不补的话既看不到新分类、也没法在设置里勾回来；补一次后写版本号，之后不再补。
+func TestSettingsService_AppearanceContentTypes_UpgradeLegacy(t *testing.T) {
+	repo := newSettingsRepoStub()
+	// 老库：四档、没有版本号
+	repo.data[service.KeyAppearanceContentTypes] = `["article","picture","social","notification"]`
+	svc := service.NewSettingsService(repo, ai.NewRateLimiter(0))
+
+	settings, err := svc.GetAppearanceSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []string{"article", "picture", "social", "notification", "video", "audio"}, settings.ContentTypes)
+	// 补完就落库：下次读库直接是六档，不靠每次 Get 现算
+	require.JSONEq(t, `["article","picture","social","notification","video","audio"]`, repo.data[service.KeyAppearanceContentTypes])
+	require.Equal(t, service.AppearanceContentTypesVersion, repo.data[service.KeyAppearanceContentTypesVersion])
+}
+
+// TestSettingsService_AppearanceContentTypes_ShortListNotUpgraded 补档只补「缺的类型」，
+// 不复活用户主动隐藏的：库里已经标了版本（说明是新口径后的写入），只留 article 就是只留 article。
+func TestSettingsService_AppearanceContentTypes_ShortListNotUpgraded(t *testing.T) {
+	repo := newSettingsRepoStub()
+	repo.data[service.KeyAppearanceContentTypes] = `["article"]`
+	repo.data[service.KeyAppearanceContentTypesVersion] = service.AppearanceContentTypesVersion
+	svc := service.NewSettingsService(repo, ai.NewRateLimiter(0))
+
+	settings, err := svc.GetAppearanceSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []string{"article"}, settings.ContentTypes)
+
+	// 用户显式保存「只留文章」：版本照样是 2，再读也不会把其余五档塞回来
+	err = svc.SetAppearanceSettings(context.Background(), &service.AppearanceSettings{ContentTypes: []string{"article"}})
+	require.NoError(t, err)
+
+	settings, err = svc.GetAppearanceSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []string{"article"}, settings.ContentTypes)
+}
+
+// TestSettingsService_AppearanceContentTypes_AcceptsVideoAudio 保存时 video / audio 不被当成非法值丢掉。
+func TestSettingsService_AppearanceContentTypes_AcceptsVideoAudio(t *testing.T) {
+	repo := newSettingsRepoStub()
+	svc := service.NewSettingsService(repo, ai.NewRateLimiter(0))
+
+	err := svc.SetAppearanceSettings(context.Background(), &service.AppearanceSettings{
+		ContentTypes: []string{"article", "video", "audio"},
+	})
+	require.NoError(t, err)
+
+	settings, err := svc.GetAppearanceSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []string{"article", "video", "audio"}, settings.ContentTypes)
+}
+
 func TestSettingsService_GetNetworkSettings_StoredValues(t *testing.T) {
 	repo := newSettingsRepoStub()
 	repo.data[service.KeyNetworkEnabled] = "true"

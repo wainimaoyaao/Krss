@@ -303,7 +303,7 @@ func (h *FilterHandler) Delete(c echo.Context) error {
 // @Summary Count entries matched by each saved view
 // @Tags filters
 // @Produce json
-// @Param contentType query string false "Only count this content type (article|picture|notification|social)"
+// @Param contentType query string false "Only count this content type (article|picture|notification|social|video|audio)"
 // @Success 200 {object} viewCountsResponse
 // @Failure 500 {object} errorResponse
 // @Router /filters/view-counts [get]
