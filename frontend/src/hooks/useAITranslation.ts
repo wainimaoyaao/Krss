@@ -567,6 +567,7 @@ export function useAITranslation({
     entry,
     isReadableActive,
     readableContent,
+    t,
     targetLanguage,
     cachedTranslation,
     isTranslating,

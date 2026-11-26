@@ -77,6 +77,8 @@ export function useVirtualizedArticleList({
     return list[index]?.id ?? `index:${index}`;
   };
 
+  // react-compiler 不认识 @tanstack/react-virtual 的 hook，这里跳过编译而不是改实现。
+  // eslint-disable-next-line react-hooks/incompatible-library -- 第三方虚拟列表 hook
   const elementVirtualizer = useVirtualizer<HTMLDivElement, HTMLElement>({
     enabled: active,
     count: entries.length,

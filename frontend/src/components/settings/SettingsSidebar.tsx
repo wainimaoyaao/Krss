@@ -20,7 +20,7 @@ export function SettingsSidebar({
 }: SettingsSidebarProps) {
   const { t } = useTranslation();
 
-  const navItems: NavItem[] = [
+  const navItems = useMemo<NavItem[]>(() => [
     {
       id: "general",
       label: t("settings.general"),
@@ -236,7 +236,7 @@ export function SettingsSidebar({
         </svg>
       ),
     },
-  ];
+  ], [t]);
 
   // 显示顺序统一由 SETTINGS_TAB_ORDER 决定（按使用频次排），这里只管图标和文案
   const orderedNavItems = useMemo(
