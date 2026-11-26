@@ -16,7 +16,6 @@ import {
   SETTINGS_MOBILE_BREAKPOINT,
   initSettingsSync,
 } from "@/lib/settings-sync";
-import { requestEntriesHeadSync } from "@/lib/entries-head-sync";
 import { showToast } from "@/stores/toast-store";
 import { ThreeColumnLayout } from "@/components/layout/three-column-layout";
 import { Sheet } from "@/components/ui/sheet";
@@ -52,13 +51,12 @@ import { PluginViewOutlet } from "@/plugins/PluginViewPane";
 import { usePluginViewRoute } from "@/plugins/usePluginViewRoute";
 import { useFeedJumpBack } from "@/hooks/useFeedJumpBack";
 import { useDocumentAppearance } from "@/hooks/useDocumentAppearance";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { refreshAllFeeds } from "@/api";
 import { ShortcutsHelpDialog } from "@/components/shortcuts/ShortcutsHelpDialog";
 import { SearchModal } from "@/components/search/SearchModal";
 import { VideoPreview } from "@/components/ui/video-preview";
-import { useGlobalHotkeys } from "@/hooks/useGlobalHotkeys";
-import { shortcutsHelp, useShortcutsHelpOpen } from "@/stores/shortcuts-store";
+import { useAppHotkeys } from "@/hooks/useAppHotkeys";
+import { useSidebarVisibility } from "@/hooks/useSidebarVisibility";
+import { shortcutsHelp } from "@/stores/shortcuts-store";
 import { useSelection, selectionToParams } from "@/hooks/useSelection";
 import { useMarkAllAsRead, useEntry } from "@/hooks/useEntries";
 import { useMobileLayout } from "@/hooks/useMobileLayout";
@@ -70,9 +68,6 @@ import { useAppearanceSettings } from "@/hooks/useAppearanceSettings";
 import { useTitle, buildTitle } from "@/hooks/useTitle";
 import {
   useUISettingKey,
-  useUISettingActions,
-  hasSidebarVisibilitySetting,
-  setUISetting,
   refreshDeviceScopedSettings,
 } from "@/hooks/useUISettings";
 import { useRefreshStatus } from "@/hooks/useRefreshStatus";
@@ -161,52 +156,9 @@ function AuthenticatedApp() {
   // Poll refresh status and auto-invalidate entries when scheduled refresh completes
   useRefreshStatus();
 
-  // ── 全局快捷键：? 快捷键帮助，r 刷新订阅 ──────────────────────────────
-  const isShortcutsOpen = useShortcutsHelpOpen();
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const queryClient = useQueryClient();
-  const refreshFeeds = useMutation({
-    // 快捷键 r：普通刷新（强制拉取走中栏刷新图标的右键菜单，带确认）
-    mutationFn: () => refreshAllFeeds(),
-    onSuccess: () => {
-      void requestEntriesHeadSync(queryClient);
-      queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
-    },
-  });
-  const handleToggleShortcuts = useCallback(() => shortcutsHelp.toggle(), []);
-  const handleRefreshShortcut = useCallback(
-    () => refreshFeeds.mutate(),
-    [refreshFeeds],
-  );
-  useGlobalHotkeys({
-    onToggleHelp: handleToggleShortcuts,
-    onRefresh: handleRefreshShortcut,
-    onSearch: () => setIsSearchOpen(true),
-    enabled: !isShortcutsOpen,
-  });
-
-  // Sidebar visibility for tablet/desktop
-  const sidebarVisible = useUISettingKey("sidebarVisible");
-  const mobileSidebarShowViews = useUISettingKey("mobileSidebarShowViews");
-  const { toggleSidebarVisible } = useUISettingActions();
-
-  // Initialize sidebar visibility for tablet on first visit
-  useEffect(() => {
-    // Only run on tablet, and only if sidebarVisible has never been set
-    if (isTablet && !hasSidebarVisibilitySetting()) {
-      setUISetting("sidebarVisible", false);
-    }
-  }, [isTablet]);
-
-  // Calculate whether to show sidebar based on breakpoint
-  // Desktop (>= 1366): always show
-  // Tablet (768-1366): user preference (default false on first visit)
-  // Mobile (< 768): use Sheet overlay
-  const showSidebar = useMemo(() => {
-    if (isMobile) return false; // Mobile uses Sheet
-    if (isTablet) return sidebarVisible; // Tablet respects user preference
-    return true; // Desktop always shows sidebar
-  }, [isMobile, isTablet, sidebarVisible]);
+  const { isSearchOpen, setIsSearchOpen, isShortcutsOpen } = useAppHotkeys();
+  const { sidebarVisible, mobileSidebarShowViews, showSidebar, toggleSidebarVisible } =
+    useSidebarVisibility({ isMobile, isTablet });
 
   // Dynamic title management
   const { t } = useTranslation();
