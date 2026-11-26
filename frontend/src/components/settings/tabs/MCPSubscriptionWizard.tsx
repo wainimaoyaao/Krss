@@ -125,7 +125,10 @@ export function MCPSubscriptionWizard({
       cancelled = true;
     };
   }, [open, serversProp.length, loadedServers]);
-  const servers = serversProp.length > 0 ? serversProp : (loadedServers ?? []);
+  const servers = useMemo(
+    () => (serversProp.length > 0 ? serversProp : (loadedServers ?? [])),
+    [serversProp, loadedServers],
+  );
 
   const [screen, setScreen] = useState(0);
   const [serverId, setServerId] = useState("");

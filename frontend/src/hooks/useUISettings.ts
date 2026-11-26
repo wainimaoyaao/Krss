@@ -839,21 +839,21 @@ export function useUISettingActions() {
     (appearance: SidebarFeedAppearance) => {
       setUISetting("sidebarFeedAppearance", appearance);
     },
-    [setUISetting],
+    [],
   );
 
   const setAccentColor = useCallback(
     (color: string | null) => {
       setUISetting("accentColor", color);
     },
-    [setUISetting],
+    [],
   );
 
   const setUnreadStyle = useCallback(
     (style: UnreadStyle) => {
       setUISetting("unreadStyle", style);
     },
-    [setUISetting],
+    [],
   );
 
   /** 13-3：只覆盖传进来的字段（面板里逐项改，不该互相踩） */
@@ -885,7 +885,7 @@ export function useUISettingActions() {
     (style: QuoteStyle) => {
       setUISetting("quoteStyle", style);
     },
-    [setUISetting],
+    [],
   );
 
   const setSplitterVisibleForView = useCallback(

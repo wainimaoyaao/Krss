@@ -66,7 +66,7 @@ export function useReadability({
     } finally {
       setIsReadableLoading(false);
     }
-  }, [entry, hasReadableContent, isReadableLoading]);
+  }, [entry, hasReadableContent, isReadableLoading, t]);
 
   // Auto-enable readability when entry is selected
   useEffect(() => {
@@ -99,7 +99,7 @@ export function useReadability({
           setIsReadableLoading(false);
         });
     }
-  }, [autoReadability, entry, isReadableLoading, showReadable]);
+  }, [autoReadability, entry, isReadableLoading, showReadable, t]);
 
   return {
     isReadableLoading,

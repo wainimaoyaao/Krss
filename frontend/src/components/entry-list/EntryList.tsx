@@ -183,7 +183,7 @@ export function EntryList({
   }, [selection]);
   useEffect(() => {
     setMutedOnly(false);
-  }, [selectionScopeKey, contentType, unreadOnly]);
+  }, [selectionScopeKey, contentType, unreadOnly, setMutedOnly]);
   useEffect(() => {
     if (!activeViewId || !viewScopeKey) return;
     if (viewScopeKey !== `${selectionScopeKey}:${contentType}`) {
@@ -589,6 +589,9 @@ export function EntryList({
   const entries = useMemo(
     () =>
       mergeDeferredRemovals(flattenUniqueEntries(data?.pages)),
+    // deferredRemovalVersion 没有出现在函数体里，但它是这次 memo 的触发源：
+    // 记账变化（标已读 / 复位）时 data 可能引用不变，去掉它就会拿到过期的合并结果。
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 故意用版本号驱动重算
     [data, deferredRemovalVersion],
   );
 

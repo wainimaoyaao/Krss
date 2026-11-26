@@ -440,7 +440,7 @@ export function Sidebar({
       }
       void label;
     },
-    [queryClient, t],
+    [t],
   );
 
   const handleRefreshFolder = useCallback(

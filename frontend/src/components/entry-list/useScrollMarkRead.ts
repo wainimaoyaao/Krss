@@ -360,6 +360,9 @@ export function useScrollMarkRead({
 
   useEffect(() => {
     const contentRoot = contentRootRef.current;
+    // 清理函数要在卸载时清掉「这一轮」的计时器：effect 里先取一次引用，
+    // 别到 cleanup 里再读 ref（那时它可能已经被下一轮换掉）。
+    const dwellTimersAtMount = dwellTimers.current;
     if (
       !enabled ||
       !contentRoot ||
@@ -495,8 +498,8 @@ export function useScrollMarkRead({
 
     return () => {
       observer.disconnect();
-      for (const timer of dwellTimers.current.values()) clearTimeout(timer);
-      dwellTimers.current.clear();
+      for (const timer of dwellTimersAtMount.values()) clearTimeout(timer);
+      dwellTimersAtMount.clear();
     };
   }, [contentRootRef, entries, enabled, observerVersion, queueRead, surface, timing]);
 

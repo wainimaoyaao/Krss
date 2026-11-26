@@ -468,5 +468,5 @@ export function useListTranslations({
       queued.add(target.entry.id);
     }
     pump();
-  }, [targets, enabled, targetLanguage]);
+  }, [targets, enabled, targetLanguage, t]);
 }
