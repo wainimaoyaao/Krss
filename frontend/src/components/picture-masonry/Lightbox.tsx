@@ -419,6 +419,7 @@ export function Lightbox() {
                     alt=""
                     className="max-h-full max-w-full object-contain"
                     style={zoom.style}
+                    draggable={false}
                   />
                   {/* Video play overlay */}
                   {isVideoThumbnail(entry?.thumbnailUrl) && entry?.url && (
@@ -457,6 +458,7 @@ export function Lightbox() {
                           alt=""
                           className="max-h-full max-w-full object-contain"
                           style={index === currentIndex ? zoom.style : undefined}
+                          draggable={false}
                           loading={
                             Math.abs(index - currentIndex) <= 1
                               ? "eager"

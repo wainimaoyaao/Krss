@@ -621,4 +621,43 @@ describe("Lightbox", () => {
       expect(mockOff).toHaveBeenCalledWith("select", expect.any(Function));
     });
   });
+
+  /**
+   * 真机回归（ego-browser，2026-11-26）：放大的图片一拖就断。
+   *
+   * 现象：灯箱里 <img> 默认 draggable，放大后按下并移动会先触发浏览器原生
+   * dragstart，Chromium 随即发 pointercancel，useImageZoom 的 onPointerCancel
+   * 把拖动结束掉 —— 只有第一次位移生效，后续 pointermove 全被忽略。
+   * 真机事件序列：pointerdown → pointermove → dragstart → pointercancel → dragend。
+   *
+   * 修法：给灯箱里两张（单图支 / 轮播支）缩放图片加 draggable={false}。
+   * jsdom 不实现原生拖拽，这里只能守住属性本身，行为要靠真实浏览器验收。
+   */
+  describe("BUG: 放大的图片被原生拖拽打断", () => {
+    it("单图分支的缩放图片必须关掉原生拖拽", () => {
+      useLightboxStore
+        .getState()
+        .open(mockImageEntry, mockFeed, [mockImageEntry.thumbnailUrl!]);
+
+      const { container } = render(<Lightbox />, { wrapper: createWrapper() });
+
+      const images = [...container.querySelectorAll("img.object-contain")];
+      expect(images).toHaveLength(1);
+      expect(images[0]?.getAttribute("draggable")).toBe("false");
+    });
+
+    it("多图轮播分支的缩放图片必须关掉原生拖拽", () => {
+      useLightboxStore
+        .getState()
+        .open(mockImageEntry, mockFeed, mockMultipleImages);
+
+      const { container } = render(<Lightbox />, { wrapper: createWrapper() });
+
+      const images = [...container.querySelectorAll("img.object-contain")];
+      expect(images.length).toBe(mockMultipleImages.length);
+      for (const image of images) {
+        expect(image.getAttribute("draggable")).toBe("false");
+      }
+    });
+  });
 });
