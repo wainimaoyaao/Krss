@@ -26,17 +26,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Sidebar } from "@/components/sidebar";
 import { AddFeedPage } from "@/components/add-feed";
 import { EntryList } from "@/components/entry-list";
-import {
-  selectionScrollKey,
-  entryListScrollPositions,
-} from "@/components/entry-list/scroll-key";
 import { PictureMasonry, Lightbox } from "@/components/picture-masonry";
 import { MobileTabBar } from "@/components/mobile/MobileTabBar";
-import {
-  applyMobileTabTap,
-  getMobileListScrollTop,
-} from "@/components/mobile/mobile-tab-scroll";
-import { dispatchScrollToTop } from "@/hooks/useScrollToTop";
 import { MenuIcon, SearchIcon } from "@/components/ui/icons";
 import { ScrollToTopZone } from "@/components/layout/ScrollToTopZone";
 import { ImagePreview } from "@/components/ui/image-preview";
@@ -50,7 +41,7 @@ import { AppOverlays } from "@/components/app-shell/AppOverlays";
 import { useRefreshReportWatcher } from "@/hooks/useRefreshReportWatcher";
 import { PluginViewOutlet } from "@/plugins/PluginViewPane";
 import { usePluginViewRoute } from "@/plugins/usePluginViewRoute";
-import { useFeedJumpBack } from "@/hooks/useFeedJumpBack";
+import { useAppNavigation } from "@/hooks/useAppNavigation";
 import { useDocumentAppearance } from "@/hooks/useDocumentAppearance";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { refreshAllFeeds } from "@/api";
@@ -59,8 +50,8 @@ import { SearchModal } from "@/components/search/SearchModal";
 import { VideoPreview } from "@/components/ui/video-preview";
 import { useGlobalHotkeys } from "@/hooks/useGlobalHotkeys";
 import { shortcutsHelp, useShortcutsHelpOpen } from "@/stores/shortcuts-store";
-import { useSelection, selectionToParams } from "@/hooks/useSelection";
-import { useMarkAllAsRead, useEntry } from "@/hooks/useEntries";
+import { useSelection } from "@/hooks/useSelection";
+import { useEntry } from "@/hooks/useEntries";
 import { useMobileLayout } from "@/hooks/useMobileLayout";
 import { useMobileDocumentScrollMode } from "@/hooks/useMobileDocumentScrollMode";
 import { useAuth } from "@/hooks/useAuth";
@@ -154,7 +145,6 @@ function AuthenticatedApp() {
    */
   const pluginViewRoute = usePluginViewRoute();
 
-  const { mutate: markAllAsRead } = useMarkAllAsRead();
   const [addFeedContentType, setAddFeedContentType] =
     useState<ContentType>("article");
 
@@ -243,116 +233,35 @@ function AuthenticatedApp() {
 
   useTitle(title);
 
-  /**
-   * 12-6：星标视图下切换「只查看当前视图」（只看当前内容类型的星标）。
-   * 侧栏那一档已按 20-2 收敛掉，现在只剩中栏列表头那个图标按钮走这里。
-   */
-  const handleToggleStarredViewOnly = useCallback(() => {
-    if (selection.type !== "starred") return;
-    selectStarred({ replace: true }, !selection.viewOnly);
-  }, [selectStarred, selection]);
-
-  // Mobile-aware selection handlers (all hooks must be before any conditional returns)
-  // Use replace to avoid creating history entries for sidebar navigation
-
-  /**
-   * 5b（用户 2026-11-23）：Web 端点第一栏的**订阅 / 文件夹 / 视图入口**（含内容类型切换）时，
-   * 列表要回到顶部。EntryList 的滚动还原会按 `selection+contentType` 恢复旧位置，
-   * 所以先把目标列表位置清 0，再派发一次回顶，双保险。手机端走两段式（handleMobileTabSelect），
-   * 这里只在非移动端生效，不动手机行为。
-   */
-  const jumpToTopOnWeb = useCallback(
-    (key: string) => {
-      if (isMobile) return;
-      entryListScrollPositions.set(key, 0);
-      dispatchScrollToTop();
-    },
-    [isMobile],
-  );
-
-  const handleSelectFeed = useCallback(
-    (feedId: string) => {
-      jumpToTopOnWeb(selectionScrollKey({ type: "feed", feedId }, contentType));
-      closeSidebar();
-      selectFeed(feedId, { replace: true });
-    },
-    [selectFeed, closeSidebar, jumpToTopOnWeb, contentType],
-  );
-
-  const { handleJumpToFeed, handleBackFromFeedJump, jumpBackHref } =
-    useFeedJumpBack({ selection, fullLocation, closeSidebar, selectFeed, navigate });
-
-  const handleSelectFolder = useCallback(
-    (folderId: string) => {
-      jumpToTopOnWeb(
-        selectionScrollKey({ type: "folder", folderId }, contentType),
-      );
-      closeSidebar();
-      selectFolder(folderId, { replace: true });
-    },
-    [selectFolder, closeSidebar, jumpToTopOnWeb, contentType],
-  );
-
-  /**
-   * 20-2：星标入口收敛后只剩这一个入口（侧栏那一行）——**默认进「只当前视图」那一档**
-   * （用户 2026-09-18：「默认选中」）。要看全部星标就在第二栏列表头把那个图标按钮关掉。
-   */
-  const handleSelectStarred = useCallback(() => {
-    closeSidebar();
-    selectStarred({ replace: true }, true);
-  }, [selectStarred, closeSidebar]);
-
-  const handleAddClick = useCallback(
-    (ct: ContentType) => {
-      setAddFeedContentType(ct);
-      closeSidebar();
-      navigate(`/add-feed?type=${ct}`, { replace: true });
-    },
-    [navigate, closeSidebar],
-  );
-
-  const handleCloseAddFeed = useCallback(() => {
-    navigate(`/all?type=${contentType}`, { replace: true });
-  }, [navigate, contentType]);
-
-  const handleMarkAllRead = useCallback(() => {
-    markAllAsRead(selectionToParams(selection, contentType));
-  }, [markAllAsRead, selection, contentType]);
-
-  const handleSelectAll = useCallback(
-    (type?: ContentType) => {
-      jumpToTopOnWeb(selectionScrollKey({ type: "all" }, type ?? contentType));
-      closeSidebar();
-      selectAll(type, { replace: true });
-    },
-    [selectAll, closeSidebar, jumpToTopOnWeb, contentType],
-  );
-
-  const handleMobileTabSelect = useCallback(
-    (type: ContentType) => {
-      // 用户 2026-11-22：第一次点当前 tab 回顶部，第二次才切到该类的「全部」。
-      // 插件视图是路由上的一层覆盖；走「切全部」分支前先退出，否则 ?view= 会把新列表挡住。
-      applyMobileTabTap({
-        type,
-        isActiveTab: type === contentType,
-        hasPluginView: pluginViewRoute.resolution.status !== "none",
-        selectionIsAll: selection.type === "all",
-        scrollTop: getMobileListScrollTop(),
-        scrollToTop: dispatchScrollToTop,
-        closePluginView: pluginViewRoute.closeView,
-        selectAll: () => handleSelectAll(type),
-      });
-    },
-    [contentType, pluginViewRoute, selection.type, handleSelectAll],
-  );
-
-  const handleFilterChange = useCallback(
-    (filter: "all" | "unread" | "starred") => {
-      closeSidebar();
-      selectFilter(filter, { replace: true });
-    },
-    [selectFilter, closeSidebar],
-  );
+  const {
+    handleToggleStarredViewOnly,
+    handleSelectFeed,
+    handleSelectFolder,
+    handleSelectStarred,
+    handleAddClick,
+    handleCloseAddFeed,
+    handleSelectAll,
+    handleMarkAllRead,
+    handleMobileTabSelect,
+    handleFilterChange,
+    handleJumpToFeed,
+    handleBackFromFeedJump,
+    jumpBackHref,
+  } = useAppNavigation({
+    selection,
+    contentType,
+    isMobile,
+    fullLocation,
+    pluginViewRoute,
+    closeSidebar,
+    navigate,
+    setAddFeedContentType,
+    selectAll,
+    selectFeed,
+    selectFolder,
+    selectStarred,
+    selectFilter,
+  });
 
   // 刷新结果弹框：盯住「刷新中 → 刷新完」的跳变（用户 11-8）
   useRefreshReportWatcher();
