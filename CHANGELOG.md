@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-27
+
+### Added
+
+- 新增「视频」与「音频」两种内容类型：侧栏切换器、搜索与筛选、订阅和文件夹的「更改类型」、添加订阅时的预览卡都有这两档；老库升级后自动补进分类视图，不需要时在「设置 → 外观 → 分类视图」里关掉即可。
+- 订阅里的音频附件（播客）与视频附件可以在正文里直接播放：音频提供播放、暂停与进度拖动，视频使用自带的播放控件；点播放才开始加载，打开文章本身不会先下载整段媒体。
+- 附件无法播放时显示提示，并给出「在新窗口打开附件」的出口。
+
+### Changed
+
+- 分类视图的顺序统一为文章、图片、通知、社交媒体、视频、音频，侧栏、设置页与订阅菜单的排序保持一致。
+
 ## [1.2.3] - 2026-11-26
 
 ### Changed
@@ -109,7 +121,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 修复开启翻译后正文排版被破坏的问题。
 - 「更多」面板里强制刷新的图标与面板内其它图标尺寸统一。
 
-[Unreleased]: https://github.com/wainimaoyaao/Krss/compare/v1.2.3...HEAD
+[Unreleased]: https://github.com/wainimaoyaao/Krss/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/wainimaoyaao/Krss/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/wainimaoyaao/Krss/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/wainimaoyaao/Krss/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/kue02/Krss/compare/v1.2.0...v1.2.1
