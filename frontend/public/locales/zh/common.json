@@ -389,7 +389,15 @@
     "summary_translating": "摘要翻译中…",
     "summary_translate_failed": "摘要翻译失败",
     "summary_translated": "摘要已翻译",
-    "video_open_player": "播放视频"
+    "video_open_player": "播放视频",
+    "media_audio_attachment": "音频附件",
+    "media_video_attachment": "视频附件",
+    "media_play_audio": "播放音频",
+    "media_pause_audio": "暂停音频",
+    "media_scrub_label": "音频播放进度",
+    "media_play_video": "播放视频附件",
+    "media_open_window": "在新窗口打开附件",
+    "media_unavailable": "附件播放失败，可尝试在新窗口打开。"
   },
   "ai_settings": {
     "translate_channel": "免费翻译通道",

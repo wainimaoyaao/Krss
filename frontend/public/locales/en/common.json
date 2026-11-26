@@ -392,7 +392,15 @@
     "summary_translating": "Translating summary…",
     "summary_translate_failed": "Summary translation failed",
     "summary_translated": "Summary translated",
-    "video_open_player": "Play video"
+    "video_open_player": "Play video",
+    "media_audio_attachment": "Audio attachment",
+    "media_video_attachment": "Video attachment",
+    "media_play_audio": "Play audio",
+    "media_pause_audio": "Pause audio",
+    "media_scrub_label": "Audio playback progress",
+    "media_play_video": "Play video attachment",
+    "media_open_window": "Open attachment in new window",
+    "media_unavailable": "This attachment can't be played here. Try opening it in a new window."
   },
   "ai_settings": {
     "translate_channel": "Free translation channels",

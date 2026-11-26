@@ -184,6 +184,14 @@ export interface Entry {
   content?: string;
   readableContent?: string;
   thumbnailUrl?: string;
+  /**
+   * RSS 附件（enclosure）的媒体地址与 MIME。
+   *
+   * 两者都可选：只有后端解析到 enclosure、且类型是 `audio/*` 或 `video/*` 时才有值。
+   * 契约里没有 duration，播放器从媒体元数据里自己取。
+   */
+  mediaUrl?: string;
+  mediaType?: string;
   author?: string;
   publishedAt?: string;
   read: boolean;
