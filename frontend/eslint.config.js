@@ -23,12 +23,9 @@ export default defineConfig([
   {
     files: ["src/components/entry-list/EntryList.tsx"],
     rules: {
+      // 本文件用 @tanstack/react-virtual 的 useVirtualizer，React Compiler 编译不了这个库，
+      // 只会反复报「Compilation Skipped」，关掉这条噪音；immutability / refs 等语义规则仍然生效。
       "react-hooks/incompatible-library": "off",
-      // 本文件的刷新记账是「ref 里的可变袋子」（在 useCallback / effect 里改 .current：
-      // 去重 Set、计时器 id、active/finished 标志）。React Compiler 的 immutability 规则
-      // 把回调里对 ref 内容的写入判成「改了不该改的值」，7 处全是这个形状；
-      // 改成 state 会改掉「同一轮刷新只报一次条数」的语义，需要单独一批带浏览器验收。
-      "react-hooks/immutability": "off",
     },
   },
 ]);
