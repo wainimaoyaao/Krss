@@ -12,12 +12,14 @@ package mcp
 // 重定向逐跳校验（CheckRedirect）；SSE 的 endpoint 事件必须与配置地址同源。
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"krss/backend/pkg/network"
 )
@@ -114,6 +116,7 @@ func (g *EndpointGuard) Client(base *http.Client) *http.Client {
 		return base
 	}
 	cloned := *base
+	cloned.Transport = g.HardenTransport(base.Transport)
 	original := base.CheckRedirect
 	cloned.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 {
@@ -128,6 +131,68 @@ func (g *EndpointGuard) Client(base *http.Client) *http.Client {
 		return nil
 	}
 	return &cloned
+}
+
+// HardenTransport 把「按解析结果校验再拨号」装到直连传输上。
+//
+// 为什么需要它：上游校验只看 URL 里的主机名，真正的解析发生在拨号时 —— 恶意服务可以让
+// 名字在「校验那一刻」解析到公网、在「拨号那一刻」解析到内网（DNS rebinding）。这里把
+// 解析和拨号收进同一个函数，只按校验过的 IP 拨，窗口就没了。
+// 走前向代理的传输做不到这一点（解析发生在代理侧，Krss 看不到结果），原样返回。
+func (g *EndpointGuard) HardenTransport(transport http.RoundTripper) http.RoundTripper {
+	if g == nil || g.invalid || transport == nil {
+		return transport
+	}
+	base, ok := transport.(*http.Transport)
+	if !ok || base.Proxy != nil {
+		return transport
+	}
+	clone := base.Clone()
+	clone.DialContext = g.dialContext
+	return clone
+}
+
+// dialContext 解析目标、逐个校验解析结果，再按校验过的 IP 拨号。
+// 保留 URL 里的主机名给 net/http：Host 头、TLS SNI 与证书校验都照旧。
+func (g *EndpointGuard) dialContext(ctx context.Context, networkName, addr string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: 3 * time.Second}
+	if g == nil || g.invalid {
+		return dialer.DialContext(ctx, networkName, addr)
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	if g.baseLocal {
+		// 自建服务：只许连配置里那个主机名（换 host 在上游 CheckURL 已经拦过）。
+		if !strings.EqualFold(host, g.base.Hostname()) {
+			return nil, fmt.Errorf("%w: 本机服务的会话不许打到 %s", ErrEndpointNotAllowed, host)
+		}
+		return dialer.DialContext(ctx, networkName, addr)
+	}
+	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		return nil, err
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("%w: %s 解析不到地址", ErrEndpointNotAllowed, host)
+	}
+	for _, ip := range ips {
+		if network.CheckPublicIPLiteral(ip.Unmap().String()) != nil {
+			return nil, fmt.Errorf("%w: %s 解析到非公网地址 %s", ErrEndpointNotAllowed, host, ip)
+		}
+	}
+	for _, ip := range ips {
+		conn, dialErr := dialer.DialContext(ctx, networkName, net.JoinHostPort(ip.Unmap().String(), port))
+		if dialErr == nil {
+			return conn, nil
+		}
+		err = dialErr
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+	}
+	return nil, err
 }
 
 // checkPublicEndpoint 目标必须是公网地址（IP 字面量当场判，域名留到解析）。
