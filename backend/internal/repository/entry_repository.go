@@ -109,7 +109,7 @@ func NewEntryRepository(db dbtx) EntryRepository {
 func (r *entryRepository) GetByID(ctx context.Context, id int64) (model.Entry, error) {
 	row := r.db.QueryRowContext(
 		ctx,
-		`SELECT id, feed_id, hash, title, url, content, readable_content, thumbnail_url, author, published_at, read, starred, muted, filter_id, auto_translate, auto_summary, created_at, updated_at
+		`SELECT id, feed_id, hash, title, url, content, readable_content, thumbnail_url, media_url, media_type, author, published_at, read, starred, muted, filter_id, auto_translate, auto_summary, created_at, updated_at
 		 FROM entries WHERE id = ?`,
 		id,
 	)
@@ -136,7 +136,7 @@ func (r *entryRepository) Search(ctx context.Context, keyword string, limit int)
 	// muted = 0：被规则静音的条目在列表里默认隐藏，搜索口径必须一致（否则「搜得到、点开找不到」）
 	// content 取前 ListContentTruncate 字符（卡片够用，全文走 GetByID）；readable_content 不选（搜索/列表都不消费它，NULL 占位保 scan 列数）。
 	query := `
-		SELECT e.id, e.feed_id, e.hash, e.title, e.url, ` + listContentExpr(ListContentTruncate) + `, NULL, e.thumbnail_url, e.author,
+		SELECT e.id, e.feed_id, e.hash, e.title, e.url, ` + listContentExpr(ListContentTruncate) + `, NULL, e.thumbnail_url, e.media_url, e.media_type, e.author,
 		       e.published_at, e.read, e.starred, e.muted, e.filter_id, e.auto_translate, e.auto_summary, e.created_at, e.updated_at
 		FROM entries e
 		WHERE e.muted = 0
@@ -179,7 +179,7 @@ func (r *entryRepository) List(ctx context.Context, filter EntryListFilter) ([]m
 	var args []interface{}
 	// content 按 filter.ContentTruncate 截断（0=全文）；readable_content 一律不选（NULL 占位保 scan 列数）。
 	query := `
-		SELECT e.id, e.feed_id, e.hash, e.title, e.url, ` + listContentExpr(filter.ContentTruncate) + `, NULL, e.thumbnail_url, e.author,
+		SELECT e.id, e.feed_id, e.hash, e.title, e.url, ` + listContentExpr(filter.ContentTruncate) + `, NULL, e.thumbnail_url, e.media_url, e.media_type, e.author,
 		       e.published_at, e.read, e.starred, e.muted, e.filter_id, e.auto_translate, e.auto_summary, e.created_at, e.updated_at
 		FROM entries e
 	`
@@ -527,7 +527,7 @@ func scanEntry(s entryScanner) (model.Entry, error) {
 	var filterID sql.NullInt64
 
 	err := s.Scan(
-		&e.ID, &e.FeedID, &e.Hash, &e.Title, &e.URL, &e.Content, &e.ReadableContent, &e.ThumbnailURL, &e.Author,
+		&e.ID, &e.FeedID, &e.Hash, &e.Title, &e.URL, &e.Content, &e.ReadableContent, &e.ThumbnailURL, &e.MediaURL, &e.MediaType, &e.Author,
 		&publishedAt, &readInt, &starredInt, &mutedInt, &filterID, &autoTranslateInt, &autoSummaryInt, &createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -583,6 +583,8 @@ func (r *entryRepository) CreateOrUpdate(ctx context.Context, entry model.Entry)
 			   url = ?,
 			   content = ?,
 			   thumbnail_url = ?,
+			   media_url = ?,
+			   media_type = ?,
 			   author = ?,
 			   published_at = COALESCE(entries.published_at, ?),
 			   updated_at = ?
@@ -610,6 +612,8 @@ func (r *entryRepository) CreateOrUpdate(ctx context.Context, entry model.Entry)
 			entry.URL,
 			entry.Content,
 			entry.ThumbnailURL,
+			entry.MediaURL,
+			entry.MediaType,
 			entry.Author,
 			publishedAt,
 			now,
@@ -630,13 +634,15 @@ func (r *entryRepository) CreateOrUpdate(ctx context.Context, entry model.Entry)
 
 	_, err := r.db.ExecContext(
 		ctx,
-		`INSERT INTO entries (id, feed_id, hash, title, url, content, thumbnail_url, author, published_at, read, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+		`INSERT INTO entries (id, feed_id, hash, title, url, content, thumbnail_url, media_url, media_type, author, published_at, read, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
 		 ON CONFLICT(feed_id, hash) DO UPDATE SET
 		   title = excluded.title,
 		   url = excluded.url,
 		   content = excluded.content,
 		   thumbnail_url = excluded.thumbnail_url,
+		   media_url = excluded.media_url,
+		   media_type = excluded.media_type,
 		   author = excluded.author,
 		   published_at = COALESCE(entries.published_at, excluded.published_at),
 		   updated_at = excluded.updated_at`,
@@ -647,6 +653,8 @@ func (r *entryRepository) CreateOrUpdate(ctx context.Context, entry model.Entry)
 		entry.URL,
 		entry.Content,
 		entry.ThumbnailURL,
+		entry.MediaURL,
+		entry.MediaType,
 		entry.Author,
 		publishedAt,
 		now,
@@ -670,7 +678,7 @@ func (r *entryRepository) ExistsByHash(ctx context.Context, feedID int64, hash s
 }
 
 func (r *entryRepository) GetExistingEntry(ctx context.Context, feedID int64, hash string, rawURL string) (*model.Entry, error) {
-	const columns = `SELECT id, feed_id, hash, title, url, content, readable_content, thumbnail_url, author, published_at, read, starred, muted, filter_id, auto_translate, auto_summary, created_at, updated_at
+	const columns = `SELECT id, feed_id, hash, title, url, content, readable_content, thumbnail_url, media_url, media_type, author, published_at, read, starred, muted, filter_id, auto_translate, auto_summary, created_at, updated_at
 	 FROM entries`
 
 	if hash != "" {

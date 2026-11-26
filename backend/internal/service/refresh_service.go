@@ -475,6 +475,8 @@ func entryContentEqual(oldEntry, newEntry model.Entry) bool {
 		strPtrEq(oldEntry.URL, newEntry.URL) &&
 		strPtrEq(oldEntry.Content, newEntry.Content) &&
 		strPtrEq(oldEntry.ThumbnailURL, newEntry.ThumbnailURL) &&
+		strPtrEq(oldEntry.MediaURL, newEntry.MediaURL) &&
+		strPtrEq(oldEntry.MediaType, newEntry.MediaType) &&
 		strPtrEq(oldEntry.Author, newEntry.Author)
 }
 

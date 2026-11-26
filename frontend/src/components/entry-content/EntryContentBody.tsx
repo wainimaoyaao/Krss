@@ -12,6 +12,7 @@ import { useReaderTextRange } from "@/components/reader/useReaderTextRange";
 import { AiSummaryBox } from "./AiSummaryBox";
 import { BackToTopButton } from "./BackToTopButton";
 import { ArticleProse } from "./ArticleProse";
+import { EntryMediaPlayer } from "./EntryMediaPlayer";
 import { SocialAuthorHeader } from "./SocialAuthorHeader";
 import type { Entry } from "@/types/api";
 
@@ -165,6 +166,9 @@ export function EntryContentBody({
           <hr className="border-border/60" />
         </header>
         )}
+
+        {/* RSS 附件（播客音频 / 视频）优先于 AI 摘要：它是这条内容本体，摘要只是辅助。 */}
+        <EntryMediaPlayer entry={entry} />
 
         <AiSummaryBox
           content={aiSummary ?? null}

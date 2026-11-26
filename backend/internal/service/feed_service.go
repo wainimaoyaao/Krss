@@ -1114,6 +1114,7 @@ func itemToEntry(feedID int64, item *gofeed.Item, ignoreDynamicTime bool) model.
 
 	// Extract thumbnail from media tags
 	entry.ThumbnailURL = extractThumbnail(item)
+	entry.MediaURL, entry.MediaType = extractPlayableMedia(item)
 
 	if item.Author != nil && item.Author.Name != "" {
 		author := sanitizer.SanitizeAuthor(item.Author.Name)

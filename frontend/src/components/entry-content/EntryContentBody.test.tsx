@@ -100,4 +100,44 @@ describe("EntryContentBody", () => {
     expect(header?.textContent).toContain("黄赟");
     expect(screen.getByRole("link", { name: "@op7418" })).toBeTruthy();
   });
+
+  it("renders the RSS attachment player between the header and the AI summary", () => {
+    const mediaEntry: Entry = {
+      ...entry,
+      mediaUrl: "https://cdn.example.com/episode.mp3",
+      mediaType: "audio/mpeg",
+    };
+
+    const { container } = render(
+      <EntryContentBody
+        entry={mediaEntry}
+        scrollRef={vi.fn()}
+        displayContent={entry.content}
+      />,
+    );
+
+    const player = container.querySelector('[data-slot="entry-media-player"]');
+    expect(player).not.toBeNull();
+    expect(player?.querySelector("audio")).not.toBeNull();
+    // 附件是内容本体：排在正文之前（AI 摘要没内容时不渲染，用正文定位）
+    const prose = container.querySelector('[data-slot="article-prose"]');
+    expect(prose).not.toBeNull();
+    expect(
+      player!.compareDocumentPosition(prose!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("does not render an attachment player for ordinary entries", () => {
+    const { container } = render(
+      <EntryContentBody
+        entry={entry}
+        scrollRef={vi.fn()}
+        displayContent={entry.content}
+      />,
+    );
+
+    expect(
+      container.querySelector('[data-slot="entry-media-player"]'),
+    ).toBeNull();
+  });
 });
