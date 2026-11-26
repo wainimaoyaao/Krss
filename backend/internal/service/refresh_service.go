@@ -228,7 +228,7 @@ func (h *hostRateLimiter) recordRequest(host string) {
 
 // processParsedFeed handles the common logic after successfully parsing a feed.
 // It clears error messages, updates ETag/LastModified, saves entries, and fetches icons.
-func (s *refreshService) processParsedFeed(ctx context.Context, feed model.Feed, parsed *gofeed.Feed, resp *http.Response) error {
+func (s *refreshService) processParsedFeed(ctx context.Context, feed model.Feed, parsed *gofeed.Feed, resp *http.Response, force bool) error {
 	feed.ETag = optionalString(resp.Header.Get("ETag"))
 	feed.LastModified = optionalString(resp.Header.Get("Last-Modified"))
 	feed.SiteURL = optionalString(parsed.Link)
@@ -246,7 +246,7 @@ func (s *refreshService) processParsedFeed(ctx context.Context, feed model.Feed,
 	if parsed.Image != nil {
 		imageURL = strings.TrimSpace(parsed.Image.URL)
 	}
-	s.postProcessEntries(ctx, committed, newCount, updatedCount, newEntries, parsed.Link, imageURL)
+	s.postProcessEntries(ctx, committed, newCount, updatedCount, newEntries, parsed.Link, imageURL, force)
 	return nil
 }
 
@@ -259,8 +259,60 @@ func (s *refreshService) processParsedFeed(ctx context.Context, feed model.Feed,
 // 条目数从 200 降到 50 一秒都不省。3 秒够抓到正常的 favicon，抓不到就下一轮再试。
 const iconRefreshBudget = 3 * time.Second
 
+const (
+	iconRefreshCooldown = 15 * time.Minute
+	maxIconCooldowns    = 4096
+)
+
+var errIconRefreshBudget = errors.New("icon refresh budget exhausted")
+
+type iconRefreshSource struct {
+	feedURL  string
+	siteURL  string
+	imageURL string
+}
+
+type iconCooldownEntry struct {
+	source iconRefreshSource
+	until  time.Time
+}
+
+func (s *refreshService) iconCoolingDown(feed model.Feed, source iconRefreshSource) bool {
+	s.iconCooldownMu.Lock()
+	defer s.iconCooldownMu.Unlock()
+	entry, ok := s.iconCooldowns[feed.ID]
+	if !ok {
+		return false
+	}
+	if feed.IconPath != nil && *feed.IconPath != "" || entry.source != source || !time.Now().Before(entry.until) {
+		delete(s.iconCooldowns, feed.ID)
+		return false
+	}
+	return true
+}
+
+func (s *refreshService) coolDownIcon(feedID int64, source iconRefreshSource) {
+	s.iconCooldownMu.Lock()
+	defer s.iconCooldownMu.Unlock()
+	now := time.Now()
+	if len(s.iconCooldowns) >= maxIconCooldowns {
+		for id, entry := range s.iconCooldowns {
+			if !now.Before(entry.until) {
+				delete(s.iconCooldowns, id)
+			}
+		}
+		if len(s.iconCooldowns) >= maxIconCooldowns {
+			return
+		}
+	}
+	if s.iconCooldowns == nil {
+		s.iconCooldowns = make(map[int64]iconCooldownEntry)
+	}
+	s.iconCooldowns[feedID] = iconCooldownEntry{source: source, until: now.Add(iconRefreshCooldown)}
+}
+
 // Run rules and fetch icons only after the database writes have finished.
-func (s *refreshService) postProcessEntries(ctx context.Context, feed model.Feed, newCount, updatedCount int, newEntries []model.Entry, siteURL, imageURL string) {
+func (s *refreshService) postProcessEntries(ctx context.Context, feed model.Feed, newCount, updatedCount int, newEntries []model.Entry, siteURL, imageURL string, force bool) {
 	s.recordFeedResult(RefreshFeedResult{
 		FeedID:   feed.ID,
 		Title:    feed.Title,
@@ -290,13 +342,23 @@ func (s *refreshService) postProcessEntries(ctx context.Context, feed model.Feed
 	// 图标抓取有它自己的时间预算：它是「锦上添花」，而这条调用在刷新轮次的收尾路径上 ——
 	// 站点的 favicon / 首页 / 第三方兜底服务全都不可达时，原来的做法是把整轮刷新拖到
 	// 十几秒（实测本机受控源：单轮 10.4–12.3 秒，且与条目数无关），而这份时间换来的
-	// 可能只是一个空图标。超时就放弃这次，下一轮还有机会。
-	if s.icons != nil {
-		iconCtx, cancel := context.WithTimeout(ctx, iconRefreshBudget)
+	// 可能只是一个空图标。没有现存图标时，预算用尽后把「这个订阅 + 这组来源地址」
+	// 冷却一段时间，免得每轮都白付这份预算；强制刷新（忽略条件请求的那种）不冷却，
+	// 用户明确要求重抓时照旧试一次。
+	source := iconRefreshSource{feedURL: feed.URL, siteURL: siteURL, imageURL: imageURL}
+	coolingDown := s.icons != nil && !force && s.iconCoolingDown(feed, source)
+	if coolingDown {
+		logger.Debug("icon refresh skipped by cooldown", "module", "service", "action", "fetch", "resource", "icon", "feed_id", feed.ID, "cooldown", iconRefreshCooldown.String())
+	}
+	if s.icons != nil && !coolingDown {
+		iconCtx, cancel := context.WithTimeoutCause(ctx, iconRefreshBudget, errIconRefreshBudget)
 		iconPath, err := s.icons.FetchAndSaveIconForFeed(iconCtx, feed.ID, imageURL, siteURL)
-		timedOut := iconCtx.Err() != nil
+		budgetExhausted := errors.Is(context.Cause(iconCtx), errIconRefreshBudget)
 		cancel()
-		if timedOut {
+		if budgetExhausted {
+			if ctx.Err() == nil && iconPath == "" && (feed.IconPath == nil || *feed.IconPath == "") {
+				s.coolDownIcon(feed.ID, source)
+			}
 			logger.Debug("icon refresh skipped by budget", "module", "service", "action", "fetch", "resource", "icon", "feed_id", feed.ID, "budget_ms", iconRefreshBudget.Milliseconds())
 		}
 		if err == nil && iconPath != "" {
@@ -334,7 +396,7 @@ func (s *refreshService) refreshMCPFeed(ctx context.Context, feed model.Feed) er
 	feed.ErrorMessage = nil
 	// MCP 没有条件请求、也没有站点图标：siteURL / imageURL 留空。
 	newCount, updatedCount, newEntries, _ := saveEntries(ctx, s.entries, feed.ID, result.Items, false)
-	s.postProcessEntries(ctx, feed, newCount, updatedCount, newEntries, "", "")
+	s.postProcessEntries(ctx, feed, newCount, updatedCount, newEntries, "", "", false)
 	s.recordFeedSuccess(ctx, feed.ID)
 	logger.Info("mcp feed refreshed", "module", "service", "action", "refresh", "resource", "feed", "result", "ok",
 		"feed_id", feed.ID, "feed_title", feed.Title, "items", len(result.Items), "tier", result.Tier, "key_level", result.KeyLevel)
@@ -477,14 +539,16 @@ type RefreshFeedResult struct {
 }
 
 type refreshService struct {
-	feeds         repository.FeedRepository
-	entries       repository.EntryRepository
-	settings      SettingsService
-	icons         IconService
-	clientFactory *network.ClientFactory
-	anubis        AnubisSolver
-	rateLimitSvc  DomainRateLimitService
-	filters       FilterService
+	feeds          repository.FeedRepository
+	entries        repository.EntryRepository
+	settings       SettingsService
+	icons          IconService
+	iconCooldownMu sync.Mutex
+	iconCooldowns  map[int64]iconCooldownEntry
+	clientFactory  *network.ClientFactory
+	anubis         AnubisSolver
+	rateLimitSvc   DomainRateLimitService
+	filters        FilterService
 	// mcp 16 批（入向 MCP 订阅）：可选依赖 —— 没接 MCP 服务时 RSS 路径完全不受影响。
 	mcp MCPService
 	// plugins 55 批：插件注册表（抓取失败分类等扩展点）。可选依赖 —— nil = 没接插件，
@@ -1047,7 +1111,7 @@ func (s *refreshService) refreshFeedWithCookie(ctx context.Context, feed model.F
 		return parseErr
 	}
 
-	return s.processParsedFeed(ctx, feed, parsed, resp)
+	return s.processParsedFeed(ctx, feed, parsed, resp, force)
 }
 
 // refreshFeedWithFreshClient creates a new http.Client to avoid connection reuse after Anubis
@@ -1124,5 +1188,5 @@ func (s *refreshService) refreshFeedWithFreshClient(ctx context.Context, feed mo
 		return parseErr
 	}
 
-	return s.processParsedFeed(ctx, feed, parsed, resp)
+	return s.processParsedFeed(ctx, feed, parsed, resp, force)
 }
