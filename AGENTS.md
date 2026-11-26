@@ -35,7 +35,7 @@ Docker 镜像同流程：`release.yml` 构建 amd64+arm64 并推送到当前 Git
 - 提交规范：Conventional Commits + 简体中文标题；**只 `git add <具体路径>`**，不要 `-A` / `git add .`；`main` 历史只前进。
 - **提交信息禁止出现 `Co-Authored-By: Hermes Agent`**：该署名邮箱绑定了无关的 GitHub 账号，会把合著算到别人头上、污染仓库 Contributors 图（2026-11-22 已因此重写历史清除一次）。协作署名只写真实贡献者，或干脆不写。
 - 迁移编号：**不要写死数字，取 `backend/internal/db/migrations.go` 里最后一个 `Migration` 号 +1**（历史上 21 过滤 / 25 视图图标 / 26 代理 / 27 MCP）。给**已经跑过迁移的开发库**补字段要**新建号**，不要改已应用的迁移（`addColumnIfMissing` 在已迁移副本上不会再生效，表现是「改了没反应」）。
-- 质量门（提交前）：后端 `cd backend && make test && make lint`（`PATH="$HOME/go/bin:$PATH"`；接口改过记得 `make gen` 重生成 mock、`swag init` 重生成文档）；前端 `cd frontend && bun run test`（退出码必须 0）+ `bunx tsc -b`。
+- 质量门（提交前）：后端 `cd backend && make test && make lint`（`PATH="$HOME/go/bin:$PATH"`；接口改过记得 `make gen` 重生成 mock、`swag init` 重生成文档）；前端 `cd frontend && bun run lint`（`eslint .`，必须 0 errors，警告不拦）+ `bun run test`（退出码必须 0）+ `bunx tsc -b`。三条都与 CI 一致，`frontend-test.yml` 的 Lint job 跑的就是 `bun run lint`。
 - **子树并行修改与集成（必须遵守）**：规则见 `docs/subtree-parallel-workflow.md`，除非用户明确要求「直接在主树做」，否则一律按该文档执行。用 git worktree：各自一条分支、各自目录，基线显式写 `main`：`git worktree add .worktrees/<名字> -b feat/<名字> main`（`.worktrees/` 已写进 `.git/info/exclude`，不要提交它）。
   - **各树各开各的端口、各用各的库副本，绝不互相干扰**：`:8090` + 真实库只归主树；并行树用 `:8082` 起（一棵一个），库用副本 `data-<名字>`；前端 `KRSS_DEV_BACKEND=http://localhost:808X bun run dev --port 517X`。
   - **各树做完不许自己往 `main` 合并**，合并由用户在主树新开 session、主动指派「合哪棵子树」后才做；口径变了 / 上下文满了要换会话接着干时，**换 session，不换树**（重开树等于白扔已跑通的后端骨架与测试）。

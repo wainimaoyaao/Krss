@@ -32,7 +32,9 @@ export function useListSummaryStatuses({
   resetKey,
 }: UseListSummaryStatusesOptions): void {
   const entriesRef = useRef(entries);
-  entriesRef.current = entries;
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
   // 条目列表异步加载：首帧 entries 为空时立即返回，等列表到达后必须重新跑一次，
   // 否则摘要徽章要等到下一次视图切换才出现。
   const entriesKey = entries.map((entry) => entry.id).join(",");

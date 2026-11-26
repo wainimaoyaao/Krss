@@ -27,6 +27,9 @@ export function useImageZoom(resetKey?: unknown) {
     startY: number;
     origin: Offset;
   } | null>(null);
+  // 拖动中要关掉位移补间（否则跟手会带 160ms 延迟）——拖动态必须进 state：
+  // ref 变了不会触发渲染，用 ref 读它只能拿到上一次渲染时的旧值。
+  const [dragging, setDragging] = useState(false);
   const pinchRef = useRef<{
     distance: number;
     scale: number;
@@ -35,6 +38,7 @@ export function useImageZoom(resetKey?: unknown) {
 
   // 换图 / 关闭时复位
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 换图/关闭就得回到 1 倍居中；这是「外部 key 变了 → 复位本地视图态」的既定写法
     setScale(1);
     setOffset({ x: 0, y: 0 });
     dragRef.current = null;
@@ -115,6 +119,7 @@ export function useImageZoom(resetKey?: unknown) {
         startY: event.clientY,
         origin: offset,
       };
+      setDragging(true);
     },
     [offset, scale],
   );
@@ -140,6 +145,7 @@ export function useImageZoom(resetKey?: unknown) {
 
   const endDrag = useCallback(() => {
     dragRef.current = null;
+    setDragging(false);
   }, []);
 
   // 双指捏合（触屏 / 触控板）
@@ -197,7 +203,7 @@ export function useImageZoom(resetKey?: unknown) {
     /** 给图片元素用的 transform */
     style: {
       transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${scale})`,
-      transition: dragRef.current ? "none" : "transform 160ms ease-out",
+      transition: dragging ? "none" : "transform 160ms ease-out",
       cursor: isZoomed ? "grab" : "zoom-in",
       touchAction: "none" as const,
     },

@@ -32,6 +32,7 @@ export function useAutoReadable(
     // 实测对 X 这类社交链接抓回的是未登录落地页，宁可不用
     if (entry.readableContent) {
       if (!looksLikeJunkContent(entry.readableContent)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 后端已抓到的可读正文是异步来源，只能在这里落态
         setContent(entry.readableContent);
       }
       return;

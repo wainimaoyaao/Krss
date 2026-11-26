@@ -62,11 +62,9 @@ export function RssHubSettingsSection() {
           baseUrl: values.base_url ?? "",
           accessKey: values.access_key ?? "",
         };
-        /* eslint-disable react-hooks/set-state-in-effect */
         setBaseUrl(stored.baseUrl);
         setAccessKey(stored.accessKey);
         setSaved(stored);
-        /* eslint-enable react-hooks/set-state-in-effect */
       })
       .catch(() => {
         // 读不出来就当没配过：页面还能填、能存，不给红字（与 bark 段的处理一致）

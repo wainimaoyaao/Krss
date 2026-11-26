@@ -41,6 +41,7 @@ export type MachineTranslatedBadgeVariant =
  * provider / model 都没有、只有 service → 只 service；
  * 三者都没有 → null（调用方退回旧 label 兜底）。
  */
+// eslint-disable-next-line react-refresh/only-export-components -- 纯函数与组件同文件只是内聚，HMR 边界不受影响
 export function describeUsage({
   service,
   provider,

@@ -160,6 +160,14 @@ export function EntryContentHeader({
   const starHidden = targetOps.isHidden("entry.star");
   const [moreOpen, setMoreOpen] = useState(false);
   const [readingSettingsOpen, setReadingSettingsOpen] = useState(false);
+  // 正文工具栏自定义顺序 / 显隐（REQ1）：读取归一后的配置，按它渲染。
+  // 必须放在 isMobile 早返回之前 —— 放在后面时移动端这一支永远不执行这两个 hook，
+  // 跨断点（桌面 ↔ 移动）切换就会触发 hook 顺序不一致。
+  const entryToolbarConfig = useUISettingKey("entryToolbar");
+  const toolbarItems = useMemo(
+    () => normalizeEntryToolbar(entryToolbarConfig),
+    [entryToolbarConfig],
+  );
 
   if (isMobile) {
     return (
@@ -386,13 +394,6 @@ export function EntryContentHeader({
       </>
     );
   }
-
-  // 正文工具栏自定义顺序 / 显隐（REQ1）：读取归一后的配置，按它渲染。
-  const entryToolbarConfig = useUISettingKey("entryToolbar");
-  const toolbarItems = useMemo(
-    () => normalizeEntryToolbar(entryToolbarConfig),
-    [entryToolbarConfig],
-  );
 
   const translationButtonState: TranslationButtonState = {
     isDisabled: !!translationDisabled,

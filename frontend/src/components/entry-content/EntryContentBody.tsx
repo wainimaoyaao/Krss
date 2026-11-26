@@ -57,6 +57,7 @@ export function EntryContentBody({
   const sourceFeed = feeds.find((feed) => feed.id === entry.feedId);
   const [iconFailed, setIconFailed] = useState(false);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 换订阅/换图标地址就得清掉上一张的失败标记，否则新图标永远不显示
     setIconFailed(false);
   }, [entry.feedId, sourceFeed?.iconPath]);
   const title = displayTitle ?? entry.title ?? t("entry.untitled");

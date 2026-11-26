@@ -25,7 +25,8 @@ describe("stripDuplicatedTitle", () => {
   });
 
   it("首段以标题开头且无剩余内容时整段删掉", () => {
-    const html = `<p>${TITLE}　</p><p>正文。</p>`;
+    // 全角空格（U+3000）用转义写，避免 no-irregular-whitespace；它正是这条用例要剥掉的尾部空白
+    const html = `<p>${TITLE}\u3000</p><p>正文。</p>`;
     expect(stripDuplicatedTitle(html, TITLE)).toBe("<p>正文。</p>");
   });
 

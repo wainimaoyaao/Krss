@@ -46,6 +46,7 @@ export type SettingsTab =
  *   → AI（模型与自动摘要翻译）→ 自动化（过滤规则）→ 网络（代理）→ 高级（域名限流）→ 数据控制（导入导出/清缓存，低频且有破坏性）
  * 侧栏与移动端下拉共用这一份顺序。
  */
+// eslint-disable-next-line react-refresh/only-export-components -- 侧栏与移动端下拉共用同一份顺序，放在这里当单一来源；与 article-image.tsx 同一处理
 export const SETTINGS_TAB_ORDER: SettingsTab[] = [
   "appearance",
   "feeds",
@@ -61,7 +62,7 @@ export const SETTINGS_TAB_ORDER: SettingsTab[] = [
 ];
 
 /** 每个标签对应的文案键（侧栏与下拉共用） */
-export const SETTINGS_TAB_LABEL_KEYS: Record<SettingsTab, string> = {
+const SETTINGS_TAB_LABEL_KEYS: Record<SettingsTab, string> = {
   general: "settings.general",
   network: "settings.network",
   appearance: "settings.appearance",
@@ -168,7 +169,6 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   // Reset to general when modal opens
   useEffect(() => {
     if (open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveTab("general");
     }
   }, [open]);

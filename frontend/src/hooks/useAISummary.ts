@@ -74,7 +74,7 @@ export function useAISummary({
     cacheHitRef.current = false;
     setCacheChecked(false);
     void (async () => {
-      let cached: string | null = null;
+      let cached: string | null;
       try {
         cached = await getCachedSummary(entryId, isReadableActive);
       } catch {

@@ -8,17 +8,16 @@ import { useEffect, useRef, useState } from "react";
  */
 export function useInView<T extends HTMLElement>(rootMargin = "600px") {
   const ref = useRef<T | null>(null);
-  const [inView, setInView] = useState(false);
+  // 没有 IntersectionObserver（老浏览器 / jsdom）时直接算「已进入」，
+  // 用惰性初值表达，别在 effect 里补一次 setState。
+  const [inView, setInView] = useState(
+    () => typeof IntersectionObserver === "undefined",
+  );
 
   useEffect(() => {
     if (inView) return;
     const node = ref.current;
     if (!node) return;
-
-    if (typeof IntersectionObserver === "undefined") {
-      setInView(true);
-      return;
-    }
 
     const observer = new IntersectionObserver(
       (entries) => {

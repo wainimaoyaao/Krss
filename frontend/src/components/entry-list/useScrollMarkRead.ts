@@ -110,7 +110,11 @@ export function useScrollMarkRead({
    * 所以用 latest ref 取当前值（与 EntryList 里 `scrollKeyRef` 同一套做法）。
    */
   const entriesRef = useRef(entries);
-  entriesRef.current = entries;
+  // 渲染期写 ref 会被 react-hooks/refs 拦；这里只是给异步回调留「最新值」，
+  // 提交后再写一样能取到最新（回调都在事件/定时器里跑）。
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
   const hasUnreadEntries = useMemo(
     () => entries.some((entry) => !entry.read),
     [entries],

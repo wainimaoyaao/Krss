@@ -127,6 +127,7 @@ export function useAuthedImageUrl(
 
   useEffect(() => {
     if (!src) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- src 被清空时同步清掉已解析的 blob URL
       setResolved(undefined);
       return;
     }

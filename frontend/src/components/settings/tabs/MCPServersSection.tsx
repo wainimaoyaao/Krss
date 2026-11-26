@@ -837,7 +837,6 @@ function MCPServerFormDialog({
   // 打开时重置表单：编辑回填连接，新建空草稿
   useEffect(() => {
     if (!open) return;
-    /* eslint-disable-next-line react-hooks/set-state-in-effect */
     setDraft(server ? mcpDraftFromServer(server) : emptyMCPServerDraft());
     setShowErrors(false);
     setSaveError(null);

@@ -55,6 +55,7 @@ export function EntryToc({ scrollNode, entryId, isMobile = false }: EntryTocProp
   useEffect(() => {
     if (!scrollNode) {
       signatureRef.current = "";
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 正文节点还没挂上时清空目录；这里同时重置 signatureRef，是「外部节点变化 → 复位」的既定写法
       setItems([]);
       return;
     }
@@ -127,6 +128,7 @@ export function EntryToc({ scrollNode, entryId, isMobile = false }: EntryTocProp
   // 当前读到哪一节（取最后一个已滚过顶部的标题）
   useEffect(() => {
     if (!scrollNode || items.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 没有标题就没有「当前小节」，清空高亮
       setActiveId(null);
       return;
     }

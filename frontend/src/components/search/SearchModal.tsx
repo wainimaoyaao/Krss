@@ -80,6 +80,7 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
   // 关闭时清空，避免下次打开还挂着上次的结果
   useEffect(() => {
     if (open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 关闭时清空上一次的搜索态；改成 key 重建要动调用方，收益不抵风险
     setKeyword("");
     setEntries([]);
     setSelectedIndex(-1);
@@ -90,6 +91,7 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
   useEffect(() => {
     if (!open || tab !== "articles") return;
     if (!trimmed) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 关键词清空时同步清结果与 loading，避免闪一下旧结果
       setEntries([]);
       setSearching(false);
       return;

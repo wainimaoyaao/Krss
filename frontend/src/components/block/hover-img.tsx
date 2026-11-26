@@ -117,15 +117,24 @@ export function HoverImg({ projects = defaultProjects, className, isContained = 
     /* 无极滚动：每行目标偏移 px（连续量）；imgIndexes 是它的四舍五入镜像（data-img-index 用） */
     const offsetsRef = useRef<Record<number, number>>({});
     const imgIndexesRef = useRef<Record<number, number>>({});
-    imgIndexesRef.current = imgIndexes;
     const snapTimersRef = useRef<Record<number, number | undefined>>({});
     /* 这一「段」滚动的起点整张位置（迟滞判据；见 SNAP_HYSTERESIS） */
     const burstStartRef = useRef<Record<number, number>>({});
     /* effect 里读最新值用的镜像（监听器只订阅一次，不跟 state 跑） */
     const countsRef = useRef<number[]>([]);
-    countsRef.current = projects.map((p) => effectiveImages(p).length);
     const triggersRef = useRef(triggers);
-    triggersRef.current = triggers;
+
+    /* 三个镜像 ref 统一在 effect 里写：渲染期写 ref 会被 react-hooks/refs 拦，
+     * 而它们只在事件处理里被读（监听器只订阅一次，需要拿最新值），提交后再写同样有效。 */
+    useEffect(() => {
+        imgIndexesRef.current = imgIndexes;
+    }, [imgIndexes]);
+    useEffect(() => {
+        countsRef.current = projects.map((p) => effectiveImages(p).length);
+    }, [projects]);
+    useEffect(() => {
+        triggersRef.current = triggers;
+    }, [triggers]);
 
     useEffect(() => {
         const projectThumbnail = thumbnailRef.current;
@@ -439,7 +448,6 @@ export function HoverImg({ projects = defaultProjects, className, isContained = 
                     if (srcs.length <= 1) {
                         return (
                             <div className="hover-img-thumbnail" key={index}>
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <AuthedImage src={project.imageSrc} alt={project.title} />
                             </div>
                         );
@@ -456,7 +464,6 @@ export function HoverImg({ projects = defaultProjects, className, isContained = 
                                 data-img-count={srcs.length}
                             >
                                 {srcs.map((src, si) => (
-                                    /* eslint-disable-next-line @next/next/no-img-element */
                                     <AuthedImage key={si} src={src} alt={project.title} loading="lazy" />
                                 ))}
                             </div>

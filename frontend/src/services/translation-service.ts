@@ -171,11 +171,9 @@ export async function translateArticlesBatch(
         });
       }
     }
-  } catch (error) {
-    // 取消（abort）不是「翻译失败」：向上抛出，让调用方按 AbortError 跳过失败态，
-    // 否则切列表/重新发起批次时会把上一批误标成「翻译失败」。
-    throw error;
   } finally {
+    // 取消（abort）不是「翻译失败」：异常不在这里 catch，照原样向上抛，
+    // 让调用方按 AbortError 跳过失败态 —— 否则切列表/重新发起批次时会把上一批误标成「翻译失败」。
     // Clean up batch tracking
     for (const article of articlesToTranslate) {
       inFlightBatchArticles.delete(article.id);

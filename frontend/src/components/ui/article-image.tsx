@@ -128,6 +128,8 @@ export const ArticleImage = memo(function ArticleImage({
   useEffect(() => {
     recoveredRef.current = null;
     tokenRetriedRef.current = false;
+    // 同一挂载换 src（列表复用节点）时，上一张的救济状态不能带过来
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 换了地址就把上一张的救济地址清掉
     setRecoveredSrc(null);
     setIsError(false);
   }, [proxiedSrc]);
@@ -145,7 +147,8 @@ export const ArticleImage = memo(function ArticleImage({
         .setDimension(src, img.naturalWidth, img.naturalHeight);
     }
     setIsLoaded(true);
-  }, [proxiedSrc, src]);
+    // containerRef 是稳定 ref，加进来只为满足依赖推断（读 containerRef.current）
+  }, [containerRef, proxiedSrc, src]);
 
   const handleError = useCallback(() => {
     // App（自定义 scheme）没有 cookie：cookie 续期救不回来，直接用当前 token 重取 blob。

@@ -135,6 +135,7 @@ export function UnreadIndicator({
  * 已读/未读的「整行」类（只有 `dim` 样式会给行降透明度）。
  * 两个分支原来都把这段三条件表达式写死在 className 里，现在收敛到这里。
  */
+// eslint-disable-next-line react-refresh/only-export-components -- 样式归并与组件同文件，测试也直接引这里
 export function unreadRowClass(
   unread: boolean,
   starred: boolean,

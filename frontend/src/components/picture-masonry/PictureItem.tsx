@@ -74,7 +74,9 @@ export const PictureItem = memo(function PictureItem({
     const img = imgRef.current;
     if (!img || !thumbnailUrl) return;
     if (img.complete && img.naturalWidth && img.naturalHeight) {
+      // 读的是 DOM（缓存图不会再触发 onLoad），拿到真实宽高后回写 store 与本地态
       setDimension(thumbnailUrl, img.naturalWidth, img.naturalHeight);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 同上：补记「图已加载」，避免缓存图永远显示占位
       setImageLoaded(true);
     }
   }, [setDimension, thumbnailUrl]);

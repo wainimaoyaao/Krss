@@ -196,7 +196,7 @@ interface TimelineCardProps {
 export const TIMELINE_FULL_DEFAULT_HEIGHT = 380;
 /** 钳制：最小 200px，最大 70vh */
 export const TIMELINE_FULL_MIN_HEIGHT = 200;
-export function timelineFullMaxHeight(): number {
+function timelineFullMaxHeight(): number {
   if (typeof window === "undefined") return 1200;
   return Math.floor(window.innerHeight * 0.7);
 }
@@ -495,6 +495,7 @@ const TimelineCard = memo(function TimelineCard({
                         containerRef={bodyRef}
                       />
                     </Suspense>
+                    {/* eslint-disable-next-line react-hooks/refs -- 目录只要拿到正文节点；这里在渲染期读 ref 是既有写法，首帧为 null 靠后续重渲染补上，改成 ref 传参要动 EntryToc 的采集时序，单独一批做 */}
                     <EntryToc scrollNode={bodyRef.current} entryId={entry.id} />
                   </div>
                   <span
@@ -775,6 +776,7 @@ export function NotificationTimeline({
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
     const query = window.matchMedia("(hover: none)");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 首帧必须知道指针类型，用 matchMedia 初值直接落态，等 change 事件会先渲染一帧错误布局
     setCoarsePointer(query.matches);
     const onChange = (event: MediaQueryListEvent) => setCoarsePointer(event.matches);
     query.addEventListener("change", onChange);
@@ -817,6 +819,7 @@ export function NotificationTimeline({
   // 退出悬停档时藏浮块（常挂节点 entry=null + visible=false，不卸载）；
   // 换一批条目后旧 id 找不到对应条目，浮块同样回到隐藏态
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 退出悬停档/换一批条目时收起浮块，是「外部条件变化 → 清 UI 态」的既定做法
     if (!hoverMode) setHoverAnchor(null);
   }, [hoverMode, entries]);
 
@@ -998,6 +1001,7 @@ export function NotificationTimeline({
 
   // 换粒度 / 换基准 / 换列表时收起来，免得「展开态」跟着另一批数据走
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 换粒度/基准/列表就重置展开态；等价改写要引入派生 key，风险大于收益
     setExpandedClusters(new Set());
   }, [granularity, timeBasis, entries]);
   // 换一批条目时上一批的自然高度作废（id → 高度是按条目记的，不清会串）；
@@ -1006,6 +1010,7 @@ export function NotificationTimeline({
   useEffect(() => {
     if (prevEntriesRef.current === entries) return;
     prevEntriesRef.current = entries;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 上一批条目的自然高度必须作废（按 id 记的，不清会串），且要跳过首轮挂载
     setNaturalHeights({});
     // 「显式收起」记忆只清掉已不在列表里的 id：同 id 还在（后台刷新同数据）时
     // 保留记忆，用户收起的卡片不会因为换一批数组引用又弹开
