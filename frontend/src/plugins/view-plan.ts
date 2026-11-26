@@ -1,3 +1,4 @@
+import { isContentType as isKnownContentType } from "@/lib/content-type-meta";
 import type { ContentType, Entry, EntryListParams } from "@/types/api";
 import type { PluginView } from "./types";
 
@@ -22,16 +23,13 @@ export function resolvePluginViewLayout(layout?: string): PluginViewLayout {
   return "list";
 }
 
-const CONTENT_TYPES: readonly ContentType[] = [
-  "article",
-  "picture",
-  "notification",
-  "social",
-];
-
-export function isContentType(value: string): value is ContentType {
-  return (CONTENT_TYPES as readonly string[]).includes(value);
-}
+/**
+ * 插件视图能绑的内容类型 —— 直接复刻内置那六档（content-type-meta 是唯一来源），
+ * 否则插件以后又得跟着「加一档」改一次。
+ */
+export { isContentType } from "@/lib/content-type-meta";
+// 本文件内部也要用（下面的 types / entryType 过滤），所以本地再引一次；
+// 重导出保持 `@/plugins/view-plan` 的老引用路径可用。
 
 export type PluginViewFetchPlan = {
   /** 条目接口的参数（`/api/entries` 的既有入参） */
@@ -57,7 +55,7 @@ export type PluginViewFetchPlan = {
 export function pluginViewFetchPlan(view: PluginView): PluginViewFetchPlan {
   const query = view.query ?? {};
   const feedIds = (query.feedIds ?? []).map(String).filter(Boolean);
-  const types = (query.types ?? []).filter(isContentType);
+  const types = (query.types ?? []).filter(isKnownContentType);
 
   const params: PluginViewFetchPlan["params"] = {};
   if (feedIds.length === 1) params.feedId = feedIds[0];
@@ -83,7 +81,7 @@ export function pluginViewFetchPlan(view: PluginView): PluginViewFetchPlan {
  */
 function entryType(entry: Entry): ContentType {
   const raw = (entry as Entry & { contentType?: string }).contentType;
-  return raw && isContentType(raw) ? raw : "article";
+  return raw && isKnownContentType(raw) ? raw : "article";
 }
 
 function timeOf(entry: Entry): number {

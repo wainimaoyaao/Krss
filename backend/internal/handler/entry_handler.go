@@ -177,7 +177,7 @@ func (h *EntryHandler) Search(c echo.Context) error {
 // @Produce json
 // @Param feedId query int false "Filter by feed ID"
 // @Param folderId query int false "Filter by folder ID"
-// @Param contentType query string false "Filter by content type (article, picture, notification, social)"
+// @Param contentType query string false "Filter by content type (article, picture, notification, social, video, audio)"
 // @Param unreadOnly query bool false "Only return unread entries"
 // @Param starredOnly query bool false "Only return starred entries"
 // @Param includeMuted query bool false "Include entries muted by filter rules"
@@ -219,7 +219,7 @@ func (h *EntryHandler) List(c echo.Context) error {
 	}
 
 	if raw := c.QueryParam("contentType"); raw != "" {
-		if raw != "article" && raw != "picture" && raw != "notification" && raw != "social" {
+		if !isValidContentType(raw) {
 			return c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid contentType"})
 		}
 		params.ContentType = &raw
@@ -445,7 +445,7 @@ func (h *EntryHandler) MarkAllAsRead(c echo.Context) error {
 	var contentType *string
 	if req.ContentType != nil {
 		ct := *req.ContentType
-		if ct != "article" && ct != "picture" && ct != "notification" && ct != "social" {
+		if !isValidContentType(ct) {
 			return c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid contentType"})
 		}
 		contentType = &ct

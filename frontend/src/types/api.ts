@@ -1,6 +1,19 @@
 import type { MCPFeedConfig } from "@/types/mcp";
 
-export type ContentType = "article" | "picture" | "notification" | "social";
+/**
+ * 内容类型（= 侧栏顶部的「分类」视图）。
+ *
+ * 2026-11-26 起六档：原有的 article / picture / notification / social，
+ * 加上 video（视频源）与 audio（播客/音频源）。后端同名白名单在
+ * backend/internal/handler/params.go 的 isValidContentType。
+ */
+export type ContentType =
+  | "article"
+  | "picture"
+  | "notification"
+  | "social"
+  | "video"
+  | "audio";
 
 
 export interface Folder {

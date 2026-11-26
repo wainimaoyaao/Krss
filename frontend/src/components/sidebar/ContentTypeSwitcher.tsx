@@ -11,12 +11,7 @@ import { feedItemStyles, sidebarItemIconStyles } from "./styles";
 
 interface ContentTypeSwitcherProps {
   contentType: ContentType;
-  counts: {
-    article: number;
-    picture: number;
-    notification: number;
-    social: number;
-  };
+  counts: Record<ContentType, number>;
   onSelect: (type: ContentType) => void;
   visibleContentTypes: ContentType[];
   /**

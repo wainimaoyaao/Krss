@@ -1287,6 +1287,10 @@ export function EntryList({
             return t("entry_list.all_notifications");
           case "social":
             return t("entry_list.all_social");
+          case "video":
+            return t("entry_list.all_videos");
+          case "audio":
+            return t("entry_list.all_audios");
           default:
             return t("entry_list.all_articles");
         }

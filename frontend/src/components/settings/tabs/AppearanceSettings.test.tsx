@@ -170,6 +170,7 @@ vi.mock("@/components/ui/segmented-control", () => ({
 }));
 
 import { AppearanceSettings } from "@/components/settings/tabs/AppearanceSettings";
+import { CONTENT_TYPE_ORDER } from "@/lib/content-type-meta";
 
 /** 取某一行的容器（SettingRow = 标签 div + 控件 div，共用一个父节点） */
 function rowOf(labelKey: string, index = 0): HTMLElement {
@@ -191,11 +192,12 @@ describe("AppearanceSettings 按视图设置", () => {
     scrollReadState.mode = "perView";
   });
 
-  it("四个内容类型（含社交媒体）各有一组按视图设置", () => {
+  it("六个内容类型（含社交媒体、视频、音频）各有一组按视图设置", () => {
     render(<AppearanceSettings />);
 
     const scrollRows = screen.getAllByText("appearance_view.scroll_read");
-    expect(scrollRows).toHaveLength(4);
+    expect(scrollRows).toHaveLength(CONTENT_TYPE_ORDER.length);
+    expect(CONTENT_TYPE_ORDER.length).toBe(6);
   });
 
   it("「缺全文时自动抓取」只在文章视图出现（社交链接抓回的是登录墙），默认关", () => {
@@ -294,7 +296,9 @@ describe("AppearanceSettings 按视图设置", () => {
     render(<AppearanceSettings />);
 
     // 每个视图一组「显示分界限」，通知那组里才有这三行
-    expect(screen.getAllByText("appearance_view.show_splitter")).toHaveLength(4);
+    expect(screen.getAllByText("appearance_view.show_splitter")).toHaveLength(
+      CONTENT_TYPE_ORDER.length,
+    );
     expect(screen.getAllByText("appearance_view.timeline_granularity")).toHaveLength(1);
     expect(screen.getAllByText("appearance_view.timeline_collapse")).toHaveLength(1);
     expect(screen.getAllByText("appearance_view.timeline_time_basis")).toHaveLength(1);
@@ -334,7 +338,9 @@ describe("AppearanceSettings 按视图设置", () => {
     scrollReadState.mode = "off";
     render(<AppearanceSettings />);
 
-    // 旧版要先去通用选「按视图单独设」才出现，现在四个视图的行常显
-    expect(screen.getAllByText("appearance_view.scroll_read")).toHaveLength(4);
+    // 旧版要先去通用选「按视图单独设」才出现，现在每个视图的行常显
+    expect(screen.getAllByText("appearance_view.scroll_read")).toHaveLength(
+      CONTENT_TYPE_ORDER.length,
+    );
   });
 });

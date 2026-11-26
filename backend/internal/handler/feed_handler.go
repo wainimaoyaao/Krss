@@ -250,7 +250,7 @@ func (h *FeedHandler) Create(c echo.Context) error {
 	if feedType == "" {
 		feedType = "article"
 	} else if !isValidContentType(feedType) {
-		return c.JSON(http.StatusBadRequest, errorResponse{Error: "type must be article, picture, notification, or social"})
+		return c.JSON(http.StatusBadRequest, errorResponse{Error: "type must be article, picture, notification, social, video, or audio"})
 	}
 	// 16 批：MCP 订阅建源（建源向导最后一步）—— 同样落成一条普通 feed 行
 	if req.SourceType == model.FeedSourceMCP {
@@ -682,7 +682,7 @@ func (h *FeedHandler) UpdateMCPConfig(c echo.Context) error {
 
 // UpdateType updates the content type of a feed.
 // @Summary Update feed type
-// @Description Change the content type of a feed (article/picture/notification/social)
+// @Description Change the content type of a feed (article/picture/notification/social/video/audio)
 // @Tags feeds
 // @Accept json
 // @Param id path int true "Feed ID"
@@ -701,7 +701,7 @@ func (h *FeedHandler) UpdateType(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid request"})
 	}
 	if !isValidContentType(req.Type) {
-		return c.JSON(http.StatusBadRequest, errorResponse{Error: "type must be article, picture, notification, or social"})
+		return c.JSON(http.StatusBadRequest, errorResponse{Error: "type must be article, picture, notification, social, video, or audio"})
 	}
 	if err := h.service.UpdateType(c.Request().Context(), id, req.Type); err != nil {
 		logger.Error("feed update type failed", "module", "handler", "action", "update", "resource", "feed", "result", "failed", "feed_id", id, "type", req.Type, "error", err)

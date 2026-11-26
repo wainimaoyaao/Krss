@@ -19,7 +19,7 @@ type Feed struct {
 	ProxyMode   *ProxyMode
 	ProxyConfig *ProxyOverrideConfig
 	IconPath    *string
-	Type        string // article, picture, notification, social
+	Type        string // article, picture, notification, social, video, audio
 	// SourceType：这条订阅「怎么取数」——rss（默认）/ mcp（16 批：MCP 取到的内容当 Feed 处理）。
 	// 老数据是列默认值 'rss' ⇒ 行为零变化。
 	SourceType string

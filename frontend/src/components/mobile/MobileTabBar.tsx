@@ -32,12 +32,9 @@ export function MobileTabBar({
   const { data: unreadCountsData } = useUnreadCounts();
 
   const counts = useMemo(() => {
-    const total: Record<ContentType, number> = {
-      article: 0,
-      picture: 0,
-      notification: 0,
-      social: 0,
-    };
+    const total = Object.fromEntries(
+      CONTENT_TYPE_ORDER.map((type) => [type, 0]),
+    ) as Record<ContentType, number>;
     const unread = unreadCountsData?.counts ?? {};
     for (const feed of feeds ?? []) {
       total[feed.type] += unread[feed.id] ?? 0;

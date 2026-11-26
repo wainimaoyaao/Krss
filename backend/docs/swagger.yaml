@@ -3460,7 +3460,7 @@ paths:
         in: query
         name: folderId
         type: integer
-      - description: Filter by content type (article, picture, notification, social)
+      - description: Filter by content type (article, picture, notification, social, video, audio)
         in: query
         name: contentType
         type: string

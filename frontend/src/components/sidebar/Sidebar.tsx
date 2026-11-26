@@ -77,13 +77,8 @@ import { showToast } from "@/stores/toast-store";
 import { queryClient } from "@/lib/queryClient";
 import { requestEntriesHeadSync } from "@/lib/entries-head-sync";
 import type { AppearanceSettings } from "@/types/settings";
-
-const defaultContentTypes: ContentType[] = [
-  "article",
-  "picture",
-  "notification",
-  "social",
-];
+import { defaultContentTypes } from "@/hooks/useVisibleContentTypes";
+import { CONTENT_TYPE_ORDER, isContentType } from "@/lib/content-type-meta";
 
 // Per-contentType scroll position cache (module-level to survive unmount/remount)
 const sidebarScrollPositions = new Map<string, number>();
@@ -182,13 +177,7 @@ export function Sidebar({
   const visibleContentTypes = useMemo(() => {
     const current = appearanceSettings?.contentTypes;
     if (!current || current.length === 0) return defaultContentTypes;
-    return current.filter(
-      (type) =>
-        type === "article" ||
-        type === "picture" ||
-        type === "notification" ||
-        type === "social",
-    );
+    return current.filter(isContentType);
   }, [appearanceSettings]);
 
   // Animation direction tracking:
@@ -269,7 +258,9 @@ export function Sidebar({
 
   // Calculate unread count for each content type
   const contentTypeCounts = useMemo(() => {
-    const counts = { article: 0, picture: 0, notification: 0, social: 0 };
+    const counts = Object.fromEntries(
+      CONTENT_TYPE_ORDER.map((type) => [type, 0]),
+    ) as Record<ContentType, number>;
     for (const feed of allFeeds) {
       counts[feed.type] += unreadCounts.get(feed.id) || 0;
     }

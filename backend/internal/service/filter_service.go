@@ -243,9 +243,9 @@ func (s *filterService) Update(ctx context.Context, id int64, params FilterWrite
 	return s.filters.GetByID(ctx, id)
 }
 
-// contentTypeWhitelist 视图能绑的内容类型（与 handler 的参数白名单同一套语义）。
+// contentTypeWhitelist 视图能绑的内容类型（与 handler 的 isValidContentType 同一套语义）。
 var contentTypeWhitelist = map[string]struct{}{
-	"article": {}, "picture": {}, "notification": {}, "social": {},
+	"article": {}, "picture": {}, "notification": {}, "social": {}, "video": {}, "audio": {},
 }
 
 // normalizeViewContentTypes 视图的「只在哪些内容类型下显示」：只留白名单内、去重；空 = 都显示。

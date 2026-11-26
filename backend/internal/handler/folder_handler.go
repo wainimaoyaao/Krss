@@ -136,7 +136,7 @@ func (h *FolderHandler) Create(c echo.Context) error {
 	if folderType == "" {
 		folderType = "article"
 	} else if !isValidContentType(folderType) {
-		return c.JSON(http.StatusBadRequest, errorResponse{Error: "type must be article, picture, notification, or social"})
+		return c.JSON(http.StatusBadRequest, errorResponse{Error: "type must be article, picture, notification, social, video, or audio"})
 	}
 	folder, err := h.service.Create(c.Request().Context(), req.Name, parentID, folderType)
 	if err != nil {
@@ -207,7 +207,7 @@ func (h *FolderHandler) Update(c echo.Context) error {
 
 // UpdateType updates the content type of a folder.
 // @Summary Update folder type
-// @Description Change the content type of a folder (article/picture/notification/social)
+// @Description Change the content type of a folder (article/picture/notification/social/video/audio)
 // @Tags folders
 // @Accept json
 // @Param id path int true "Folder ID"
@@ -226,7 +226,7 @@ func (h *FolderHandler) UpdateType(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid request"})
 	}
 	if !isValidContentType(req.Type) {
-		return c.JSON(http.StatusBadRequest, errorResponse{Error: "type must be article, picture, notification, or social"})
+		return c.JSON(http.StatusBadRequest, errorResponse{Error: "type must be article, picture, notification, social, video, or audio"})
 	}
 	if err := h.service.UpdateType(c.Request().Context(), id, req.Type); err != nil {
 		logger.Error("folder update type failed", "module", "handler", "action", "update", "resource", "folder", "result", "failed", "folder_id", id, "type", req.Type, "error", err)

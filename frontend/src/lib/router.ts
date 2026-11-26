@@ -1,4 +1,5 @@
 import type { SelectionType } from "@/hooks/useSelection";
+import { isContentType } from "@/lib/content-type-meta";
 import type { ContentType } from "@/types/api";
 
 export interface RouteState {
@@ -9,10 +10,7 @@ export interface RouteState {
 }
 
 function parseContentType(value: string | null): ContentType {
-  if (value === "picture" || value === "notification" || value === "social") {
-    return value;
-  }
-  return "article";
+  return isContentType(value) ? value : "article";
 }
 
 /**
