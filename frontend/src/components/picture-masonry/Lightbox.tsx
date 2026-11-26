@@ -246,19 +246,44 @@ export function Lightbox() {
     pointerDownPos.current = { x: e.clientX, y: e.clientY };
   }, []);
 
+  /**
+   * 判断这次 click 是不是「拖动松手」。
+   *
+   * 位移 ≥5px 的一次按下-移动-松开就是拖动（放大后平移图片），那次 click 必须吞掉：
+   * 它本来会冒到最外层 overlay 的 onClick，把整个灯箱关掉 —— 用户拖完图，图就没了。
+   */
+  const wasDragRelease = useCallback((e: React.MouseEvent) => {
+    const start = pointerDownPos.current;
+    pointerDownPos.current = null;
+    if (!start) return false;
+    return Math.abs(e.clientX - start.x) >= 5 || Math.abs(e.clientY - start.y) >= 5;
+  }, []);
+
+  /** 轮播/多图支：纯点击关闭（沿用原行为），拖动松手不再关闭。 */
   const handleCarouselClick = useCallback(
     (e: React.MouseEvent) => {
-      // Only close if pointer moved less than 5px (pure click, not drag)
-      if (pointerDownPos.current) {
-        const dx = Math.abs(e.clientX - pointerDownPos.current.x);
-        const dy = Math.abs(e.clientY - pointerDownPos.current.y);
-        if (dx < 5 && dy < 5) {
-          close();
-        }
+      const dragged = wasDragRelease(e);
+      e.stopPropagation();
+      if (!dragged) {
+        close();
       }
-      pointerDownPos.current = null;
     },
-    [close],
+    [close, wasDragRelease],
+  );
+
+  /**
+   * 单图支：图片区域的 click 一律不冒泡。
+   *
+   * 放大是双击（`onDoubleClick`）触发的，它需要两次 click 之间灯箱还开着；只要 click
+   * 冒到 overlay 就会 `close()`，双击放大永远到不了。关闭改由点背景、按 Esc、或右上角
+   * 按钮完成 —— 这些都不经过图片区域的 click。
+   */
+  const handleImageClickSingle = useCallback(
+    (e: React.MouseEvent) => {
+      wasDragRelease(e);
+      e.stopPropagation();
+    },
+    [wasDragRelease],
   );
 
   const handleOverlayClick = useCallback(() => {
@@ -413,6 +438,13 @@ export function Lightbox() {
                   className="relative flex size-full items-center justify-center"
                   ref={zoom.containerRef}
                   {...zoom.handlers}
+                  onPointerDown={(e) => {
+                    // 记按下点用于「拖动还是点击」判定；缩放拖动自己的 onPointerDown
+                    // 只在放大后接管，二者都要跑，所以在这里合并而不是覆盖。
+                    handleCarouselPointerDown(e);
+                    zoom.handlers.onPointerDown(e);
+                  }}
+                  onClick={handleImageClickSingle}
                 >
                   <AuthedImage
                     src={images[0]}

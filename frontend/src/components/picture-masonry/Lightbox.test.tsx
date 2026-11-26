@@ -1,3 +1,4 @@
+import React from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -54,19 +55,23 @@ vi.mock("embla-carousel-react", () => ({
 vi.mock("framer-motion", () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
   motion: {
-    div: ({
-      children,
-      className,
-      onClick,
-    }: {
-      children: React.ReactNode;
-      className?: string;
-      onClick?: () => void;
-    }) => (
-      <div className={className} onClick={onClick}>
-        {children}
-      </div>
-    ),
+    // 只丢掉 framer 自己的动画 props，其余原样透传 —— 早先这里只保留
+    // children/className/onClick，导致灯箱的手势 props（onPointerDown / onWheel /
+    // onDoubleClick）在测试里全部消失，拖动相关的断言测不到真实行为。
+    div: (props: Record<string, unknown>) => {
+      const { children, ...rest } = props;
+      // 只丢掉 framer 自己的动画 props，其余（含 onPointerDown / onWheel /
+      // onDoubleClick 这些手势）原样透传 —— 早先这里只保留 children/className/
+      // onClick，导致灯箱的手势在测试里全消失，拖动相关断言测不到真实行为。
+      for (const key of ["initial", "animate", "exit", "transition"]) {
+        delete rest[key];
+      }
+      return React.createElement(
+        "div",
+        rest as React.HTMLAttributes<HTMLDivElement>,
+        children as React.ReactNode,
+      );
+    },
   },
 }));
 
@@ -658,6 +663,87 @@ describe("Lightbox", () => {
       for (const image of images) {
         expect(image.getAttribute("draggable")).toBe("false");
       }
+    });
+  });
+
+  /**
+   * 手势隔离（2026-11-26，真机验收后补）：放大后拖动平移，松手别把灯箱关掉。
+   *
+   * 松手会产生一次 click，它会冒到最外层 overlay 的 onClick（= close）。
+   * 修前单图支压根没有这个判定：修掉原生拖拽（draggable={false}）之后拖动才活下来，
+   * 于是「拖完图 → click 冒到 overlay → 灯箱消失」这条路才第一次走得到。
+   * 轮播支本来就有「位移 <5px 才算点击」的判定，这次把同一份判定接到单图支。
+   */
+  describe("手势：拖动松手不算点击", () => {
+    const setupSingleImage = () => {
+      useLightboxStore
+        .getState()
+        .open(mockImageEntry, mockFeed, [mockImageEntry.thumbnailUrl!]);
+      const view = render(<Lightbox />, { wrapper: createWrapper() });
+      const image = view.container.querySelector("img.object-contain")!;
+      return { image, ...view };
+    };
+
+    const setupTwoImages = () => {
+      useLightboxStore
+        .getState()
+        .open(mockImageEntry, mockFeed, [
+          mockImageEntry.thumbnailUrl!,
+          "https://example.com/second.png",
+        ]);
+      const view = render(<Lightbox />, { wrapper: createWrapper() });
+      const image = view.container.querySelector("img.object-contain")!;
+      return { image, ...view };
+    };
+
+    it("单图：按下后移动超过 5px 再松手，灯箱保持打开", () => {
+      const { image } = setupSingleImage();
+
+      fireEvent.pointerDown(image, { clientX: 100, clientY: 100 });
+      fireEvent.pointerUp(image, { clientX: 160, clientY: 140 });
+      fireEvent.click(image, { clientX: 160, clientY: 140 });
+
+      expect(useLightboxStore.getState().isOpen).toBe(true);
+    });
+
+    it("单图：原地点击不关闭（留给双击放大，关闭走背景/Esc/按钮）", () => {
+      const { image } = setupSingleImage();
+
+      fireEvent.pointerDown(image, { clientX: 120, clientY: 120 });
+      fireEvent.pointerUp(image, { clientX: 120, clientY: 120 });
+      fireEvent.click(image, { clientX: 120, clientY: 120 });
+
+      expect(useLightboxStore.getState().isOpen).toBe(true);
+    });
+
+    it("单图：位移 4px 也当作点击，同样不关闭", () => {
+      const { image } = setupSingleImage();
+
+      fireEvent.pointerDown(image, { clientX: 100, clientY: 100 });
+      fireEvent.pointerUp(image, { clientX: 104, clientY: 103 });
+      fireEvent.click(image, { clientX: 104, clientY: 103 });
+
+      expect(useLightboxStore.getState().isOpen).toBe(true);
+    });
+
+    it("多图：原地点击照旧关闭灯箱", () => {
+      const { image } = setupTwoImages();
+
+      fireEvent.pointerDown(image, { clientX: 120, clientY: 120 });
+      fireEvent.pointerUp(image, { clientX: 120, clientY: 120 });
+      fireEvent.click(image, { clientX: 120, clientY: 120 });
+
+      expect(useLightboxStore.getState().isOpen).toBe(false);
+    });
+
+    it("多图：拖动松手不关闭", () => {
+      const { image } = setupTwoImages();
+
+      fireEvent.pointerDown(image, { clientX: 100, clientY: 100 });
+      fireEvent.pointerUp(image, { clientX: 170, clientY: 150 });
+      fireEvent.click(image, { clientX: 170, clientY: 150 });
+
+      expect(useLightboxStore.getState().isOpen).toBe(true);
     });
   });
 });
