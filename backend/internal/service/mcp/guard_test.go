@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"krss/backend/internal/service/mcp"
@@ -129,4 +131,54 @@ func TestEndpointGuard_ErrorsAreClassifiable(t *testing.T) {
 	guard := mcp.NewEndpointGuard("https://mcp.example.com/rpc")
 	err := guard.CheckURL("http://127.0.0.1/")
 	require.True(t, errors.Is(err, mcp.ErrEndpointNotAllowed))
+}
+
+// DNS rebinding：名字在「校验那一刻」是公网、在「拨号那一刻」解析到内网。
+// 拨号器把解析与拨号收在一处，只按校验过的 IP 拨，这种名字根本拨不出去。
+func TestEndpointGuard_DialerRejectsRebindingToLoopback(t *testing.T) {
+	guard := mcp.NewEndpointGuard("https://mcp.example.com/rpc")
+	client := guard.Client(&http.Client{Transport: &http.Transport{}})
+
+	// localhost 在上游是合法地址（公网 base 允许任意公网域名），
+	// 但它解析到回环地址 —— 必须在拨号阶段被拒。
+	transport, ok := client.Transport.(*http.Transport)
+	require.True(t, ok, "客户端应挂上加固过的传输")
+	require.NotNil(t, transport.DialContext, "直连传输必须换成守卫拨号器")
+
+	_, err := transport.DialContext(context.Background(), "tcp", "localhost:9")
+	require.ErrorIs(t, err, mcp.ErrEndpointNotAllowed)
+}
+
+// 自建服务的会话要连本机，守卫拨号器不能把这条正常路径也拦掉。
+func TestEndpointGuard_DialerKeepsLocalBaseWorking(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	guard := mcp.NewEndpointGuard(upstream.URL + "/mcp")
+	require.True(t, guard.BaseLocal())
+	client := guard.Client(&http.Client{Transport: &http.Transport{}})
+	transport, ok := client.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.NotNil(t, transport.DialContext)
+
+	conn, err := transport.DialContext(context.Background(), "tcp", strings.TrimPrefix(upstream.URL, "http://"))
+	require.NoError(t, err)
+	require.NoError(t, conn.Close())
+
+	// 换一个主机名就该被拒（同上游 CheckURL 的口径）。
+	_, err = transport.DialContext(context.Background(), "tcp", "example.org:80")
+	require.ErrorIs(t, err, mcp.ErrEndpointNotAllowed)
+}
+
+// 走前向代理的传输没法在 Krss 侧校验解析结果（解析发生在代理侧），
+// 这时原样保留传输，不做「看似加固」的替换。
+func TestEndpointGuard_LeavesProxiedTransportAlone(t *testing.T) {
+	proxied := &http.Transport{Proxy: func(*http.Request) (*url.URL, error) {
+		return url.Parse("http://127.0.0.1:7890")
+	}}
+	guard := mcp.NewEndpointGuard("https://mcp.example.com/rpc")
+	client := guard.Client(&http.Client{Transport: proxied})
+	require.Same(t, proxied, client.Transport)
 }
