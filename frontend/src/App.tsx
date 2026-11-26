@@ -2,20 +2,14 @@ import {
   Suspense,
   lazy,
   useState,
-  useMemo,
   useEffect,
 } from "react";
 import { Router, useLocation, useSearch, Redirect } from "wouter";
 import { useTranslation } from "react-i18next";
 import {
-  SETTINGS_SAVED_EVENT,
-  SETTINGS_SYNC_FAILED_EVENT,
-} from "@/lib/settings-saved";
-import {
   SETTINGS_MOBILE_BREAKPOINT,
   initSettingsSync,
 } from "@/lib/settings-sync";
-import { showToast } from "@/stores/toast-store";
 import { ThreeColumnLayout } from "@/components/layout/three-column-layout";
 import { Sheet } from "@/components/ui/sheet";
 import { MotionConfig } from "framer-motion";
@@ -48,14 +42,13 @@ import { useAppHotkeys } from "@/hooks/useAppHotkeys";
 import { useSidebarVisibility } from "@/hooks/useSidebarVisibility";
 import { shortcutsHelp } from "@/stores/shortcuts-store";
 import { useSelection } from "@/hooks/useSelection";
-import { useEntry } from "@/hooks/useEntries";
 import { useMobileLayout } from "@/hooks/useMobileLayout";
 import { useMobileDocumentScrollMode } from "@/hooks/useMobileDocumentScrollMode";
 import { useAuth } from "@/hooks/useAuth";
-import { useFeeds } from "@/hooks/useFeeds";
-import { useFolders } from "@/hooks/useFolders";
 import { useAppearanceSettings } from "@/hooks/useAppearanceSettings";
-import { useTitle, buildTitle } from "@/hooks/useTitle";
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+import { useSettingsToast } from "@/hooks/useSettingsToast";
+import { useVisibleContentTypes } from "@/hooks/useVisibleContentTypes";
 import {
   useUISettingKey,
   refreshDeviceScopedSettings,
@@ -64,14 +57,8 @@ import { useRefreshStatus } from "@/hooks/useRefreshStatus";
 import { isAddFeedPath } from "@/lib/router";
 import { initProxyImageRecovery } from "@/lib/proxy-image-recovery";
 import { cn } from "@/lib/utils";
-import type { ContentType, Feed, Folder } from "@/types/api";
+import type { ContentType } from "@/types/api";
 
-const defaultContentTypes: ContentType[] = [
-  "article",
-  "picture",
-  "notification",
-  "social",
-];
 const LazyEntryContent = lazy(async () => {
   const module = await import("@/components/entry-content");
   return { default: module.EntryContent };
@@ -149,40 +136,13 @@ function AuthenticatedApp() {
   const { sidebarVisible, mobileSidebarShowViews, showSidebar, toggleSidebarVisible } =
     useSidebarVisibility({ isMobile, isTablet });
 
-  // Dynamic title management
   const { t } = useTranslation();
-  const { data: feeds = [] } = useFeeds();
-  const { data: folders = [] } = useFolders();
+  // 外观设置：视图清单、加载门（未加载完不渲染，避免三视图闪烁）与侧栏视图切换器都要它
   const { data: appearanceSettings, isLoading: isAppearanceLoading } =
     useAppearanceSettings();
-  const { data: entry } = useEntry(selectedEntryId);
 
-  const feedsMap = useMemo(() => {
-    const map = new Map<string, Feed>();
-    for (const feed of feeds) {
-      map.set(feed.id, feed);
-    }
-    return map;
-  }, [feeds]);
-
-  const foldersMap = useMemo(() => {
-    const map = new Map<string, Folder>();
-    for (const folder of folders) {
-      map.set(folder.id, folder);
-    }
-    return map;
-  }, [folders]);
-
-  const title = buildTitle({
-    selection,
-    contentType,
-    entryTitle: entry?.title,
-    feedsMap,
-    foldersMap,
-    t,
-  });
-
-  useTitle(title);
+  // 文档标题：<条目> / <订阅> / <文件夹> / <内容类型> | Krss
+  useDocumentTitle({ selection, contentType, selectedEntryId });
 
   const {
     handleToggleStarredViewOnly,
@@ -225,63 +185,14 @@ function AuthenticatedApp() {
   // 外观类设置落到 <html>：减少动态效果 / 引文样式 / 主题色 / 界面字号 / 圆角三个旋钮
   useDocumentAppearance();
 
-  /**
-   * 12-7：即时型设置项（开关 / 数量 / 下拉）改一下就落库，这里给一句「已保存」。
-   * 防抖 700ms：连续拨数字或连点开关只在停手后提示一次，避免刷屏。
-   */
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const onSaved = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => showToast(t("settings.saved_toast")), 700);
-    };
-    window.addEventListener(SETTINGS_SAVED_EVENT, onSaved);
-    return () => {
-      if (timer) clearTimeout(timer);
-      window.removeEventListener(SETTINGS_SAVED_EVENT, onSaved);
-    };
-  }, [t]);
+  // 设置写的两句提示：即时型设置「已保存」（防抖 700ms）与「同步失败」
+  useSettingsToast();
 
-  /**
-   * 21 批：设置「写服务端」失败必须看得见 —— 本地那份（缓存）已经改好了、界面也已经生效，
-   * 只有上传这一步失败；不说的话用户会以为一切都保存好了，换台设备才发现少了一半。
-   */
-  useEffect(() => {
-    const onSyncFailed = (event: Event) => {
-      const reason =
-        event instanceof CustomEvent && typeof event.detail === "string"
-          ? event.detail
-          : "";
-      showToast(
-        t("settings.sync_failed_toast", {
-          reason: reason || t("settings.sync_failed_unknown"),
-        }),
-      );
-    };
-    window.addEventListener(SETTINGS_SYNC_FAILED_EVENT, onSyncFailed);
-    return () => {
-      window.removeEventListener(SETTINGS_SYNC_FAILED_EVENT, onSyncFailed);
-    };
-  }, [t]);
-
-  const visibleContentTypes = useMemo(() => {
-    const current = appearanceSettings?.contentTypes;
-    if (!current || current.length === 0) return defaultContentTypes;
-    return current.filter(
-      (item) =>
-        item === "article" ||
-        item === "picture" ||
-        item === "notification" ||
-        item === "social",
-    );
-  }, [appearanceSettings]);
-
-  useEffect(() => {
-    if (!visibleContentTypes.includes(contentType)) {
-      const next = visibleContentTypes[0] ?? "article";
-      selectAll(next, { replace: true });
-    }
-  }, [visibleContentTypes, contentType, selectAll]);
+  const visibleContentTypes = useVisibleContentTypes({
+    appearanceSettings,
+    contentType,
+    selectAll,
+  });
 
   const usesMobileDocumentScroll = isMobile && !isAddFeedPath(location);
   useMobileDocumentScrollMode({
