@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-11-26
+
+### Changed
+
+- 添加订阅时图标抓取只等 3 秒：超时先把订阅交给你用，图标在后台继续补。站点没有图标时，从 50.68 秒降到约 3 秒。
+
+### Fixed
+
+- 站点没有图标时，刷新不再每轮都为抓图标白等：同一订阅 15 分钟内跳过重复尝试，手动强制刷新与换了订阅地址仍会重新尝试。
+
+### Security
+
+- 直连访问公网 MCP 服务时改为「先解析、逐条校验、按校验过的地址连接」，解析结果被换掉也连不到内网地址；配置了前向代理的部署仍由代理解析。
+
 ## [1.2.2] - 2026-11-26
 
 ### Fixed
@@ -95,7 +109,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 修复开启翻译后正文排版被破坏的问题。
 - 「更多」面板里强制刷新的图标与面板内其它图标尺寸统一。
 
-[Unreleased]: https://github.com/wainimaoyaao/Krss/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/wainimaoyaao/Krss/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/wainimaoyaao/Krss/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/wainimaoyaao/Krss/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/kue02/Krss/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/kue02/Krss/compare/v1.1.9.1...v1.2.0
