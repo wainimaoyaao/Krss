@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-26
+
+### Fixed
+
+- 移动端从文章跳到所属订阅后，可以用顶栏返回按钮回到原来的列表，并保留筛选条件。
+- 阅读正文时在桌面与移动布局间切换，不再因 React Hook 顺序变化导致页面报错。
+- 图片灯箱放大后可以连续拖动，松手不再误关灯箱；单图支持双击放大，单击图片不会关闭。
+
 ## [1.2.1] - 2026-11-25
 
 ### Security
@@ -87,7 +95,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 修复开启翻译后正文排版被破坏的问题。
 - 「更多」面板里强制刷新的图标与面板内其它图标尺寸统一。
 
-[Unreleased]: https://github.com/kue02/Krss/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/wainimaoyaao/Krss/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/wainimaoyaao/Krss/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/kue02/Krss/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/kue02/Krss/compare/v1.1.9.1...v1.2.0
 [1.1.9.1]: https://github.com/kue02/Krss/compare/v1.1.9...v1.1.9.1
