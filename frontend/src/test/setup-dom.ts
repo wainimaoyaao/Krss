@@ -22,7 +22,17 @@ if (typeof Element !== "undefined" && !Element.prototype.animate) {
       addEventListener: () => {},
       removeEventListener: () => {},
       finished: Promise.resolve(),
-      currentTime: 0,
+      // 2026-11-26：给一个「动画早就放完」的时刻，别给 0。
+      //
+      // m3-ripple 在 `element.animate(...)` 之后读 `currentTime` 算**还剩多久**，再按剩余
+      // 时长排一个 `setTimeout` 收尾（node_modules/m3-ripple/dist/index.js:156-161）。
+      // jsdom 里动画推进不了，读到 0 就等于「还剩整段时长」⇒ 每次点带涟漪的元素都排一个
+      // 100–400ms 的真定时器，测试文件跑得快时它会在该文件的 jsdom 环境销毁**之后**才触发
+      // `setState`，整轮 vitest 便以未捕获异常收场：
+      // `ReferenceError: window is not defined`（resolveUpdatePriority ← m3-ripple Timeout）。
+      // CI 的 `bun run test:coverage` 就栽在这一个错上（180 文件 1470 项全绿、退出码却是 1）。
+      // 读到「已放完」后 ripple 直接收尾、不再排定时器 —— 测试断言的是行为，不是动画帧。
+      currentTime: 10_000,
       playState: "finished",
       onfinish: null,
       oncancel: null,
