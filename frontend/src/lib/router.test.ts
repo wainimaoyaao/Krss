@@ -119,6 +119,11 @@ describe("router", () => {
       expect(parseRoute("/all", "type=invalid").contentType).toBe("article");
     });
 
+    it("2026-11-26：视频 / 音频两档也认地址栏的 type", () => {
+      expect(parseRoute("/all", "type=video").contentType).toBe("video");
+      expect(parseRoute("/all", "type=audio").contentType).toBe("audio");
+    });
+
     it("should fallback to all for unknown paths", () => {
       const result = parseRoute("/unknown/path", "");
       expect(result.selection).toEqual({ type: "all" });

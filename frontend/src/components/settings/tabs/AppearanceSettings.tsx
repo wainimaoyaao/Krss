@@ -63,15 +63,14 @@ import {
   BellIcon,
   EyeOffIcon,
   SocialIcon,
+  VideoIcon,
+  AudioIcon,
 } from "@/components/ui/icons";
+import { CONTENT_TYPE_ORDER, isContentType } from "@/lib/content-type-meta";
 import type { ContentType } from "@/types/api";
 
-const defaultContentTypes: ContentType[] = [
-  "article",
-  "picture",
-  "notification",
-  "social",
-];
+/** 没配过时的「分类视图」全档（顺序与后端 defaultAppearanceContentTypes 同一套口径） */
+const defaultContentTypes: ContentType[] = CONTENT_TYPE_ORDER;
 
 /** 色块上的骨架条该用深色还是浅色（按底色亮度判断） */
 function swatchInk(color?: string) {
@@ -435,13 +434,7 @@ export function AppearanceSettings() {
   const enabledContentTypes = useMemo(() => {
     const current = appearanceSettings?.contentTypes;
     if (!current || current.length === 0) return defaultContentTypes;
-    return current.filter(
-      (item) =>
-        item === "article" ||
-        item === "picture" ||
-        item === "notification" ||
-        item === "social",
-    );
+    return current.filter(isContentType);
   }, [appearanceSettings]);
 
   const disabledContentTypes = useMemo(() => {
@@ -532,6 +525,14 @@ export function AppearanceSettings() {
       social: {
         label: t("content_type.social"),
         icon: <SocialIcon className="size-4" />,
+      },
+      video: {
+        label: t("content_type.video"),
+        icon: <VideoIcon className="size-4" />,
+      },
+      audio: {
+        label: t("content_type.audio"),
+        icon: <AudioIcon className="size-4" />,
       },
     }),
     [t],
@@ -995,9 +996,7 @@ export function AppearanceSettings() {
         description={t("appearance_view.description")}
       >
         <div className="space-y-2.5">
-          {(
-            ["article", "picture", "notification", "social"] as ContentType[]
-          ).map(
+          {(CONTENT_TYPE_ORDER as ContentType[]).map(
             (view) => (
               <div
                 key={view}

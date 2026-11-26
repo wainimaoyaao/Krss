@@ -37,7 +37,9 @@
     "picture": "Pictures",
     "notification": "Notifications",
     "social": "Social",
-    "nav_label": "Content types"
+    "nav_label": "Content types",
+    "video": "Videos",
+    "audio": "Audio"
   },
   "actions": {
     "expand": "Expand",
@@ -906,7 +908,9 @@
     "folder": "Folder",
     "no_articles": "No articles",
     "back_to_top": "Back to top",
-    "view_image": "View image"
+    "view_image": "View image",
+    "all_videos": "All videos",
+    "all_audios": "All audio"
   },
   "update": {
     "available": "Update Available",

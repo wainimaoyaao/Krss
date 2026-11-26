@@ -134,6 +134,51 @@ export function SocialIcon({ className }: IconProps) {
   );
 }
 
+export function VideoIcon({ className }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* 卡片轮廓，与文章/图片两个类型同形 */}
+      <rect x="3" y="3" width="18" height="18" rx="4.5" />
+      {/* 播放三角（实心） */}
+      <path
+        d="M10.3 8.6l5.1 3.2a.25.25 0 0 1 0 .4l-5.1 3.2a.25.25 0 0 1-.4-.2v-6.4a.25.25 0 0 1 .4-.2z"
+        fill="currentColor"
+        stroke="none"
+      />
+    </svg>
+  );
+}
+
+export function AudioIcon({ className }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* 卡片轮廓，六档同一套外形 */}
+      <rect x="3" y="3" width="18" height="18" rx="4.5" />
+      {/* 双八分音符：符干 + 顶部横梁 */}
+      <path d="M11.2 16.2V9.5l5.9-1.3v6.7" />
+      {/* 两个符头（实心） */}
+      <circle cx="9.6" cy="16.4" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="15.1" r="1.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function BackIcon({ className }: IconProps) {
   return (
     <svg

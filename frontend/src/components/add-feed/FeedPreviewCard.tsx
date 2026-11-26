@@ -5,12 +5,7 @@ import { formatRelativeTime } from "@/lib/date-utils";
 import { isSafeUrl, getSafeHostname } from "@/lib/url";
 import { getProxiedImageUrl } from "@/lib/image-proxy";
 import { AuthedImage } from "@/components/ui/authed-image";
-import {
-  FileTextIcon,
-  ImageIcon,
-  BellIcon,
-  SocialIcon,
-} from "@/components/ui/icons";
+import { CONTENT_TYPE_ORDER, contentTypeMeta } from "@/lib/content-type-meta";
 import { ViewPreviewEntries } from "./ViewPreviewEntries";
 import type { FeedPreview, Folder, ContentType } from "@/types/api";
 import type { SubscribeOptions } from "@/hooks/useAddFeed";
@@ -25,12 +20,11 @@ interface FeedPreviewCardProps {
   isLoading?: boolean;
 }
 
-const VIEW_OPTIONS = [
-  { value: "article" as ContentType, icon: FileTextIcon },
-  { value: "picture" as ContentType, icon: ImageIcon },
-  { value: "notification" as ContentType, icon: BellIcon },
-  { value: "social" as ContentType, icon: SocialIcon },
-];
+/** 六个视图胶囊：顺序与图标都跟侧栏切换器同一份（content-type-meta） */
+const VIEW_OPTIONS = CONTENT_TYPE_ORDER.map((type) => ({
+  value: type,
+  icon: contentTypeMeta[type].icon,
+}));
 
 /** 视图选择：四个胶囊（对齐 Folo 的视图单选） */
 function ViewTypeSelector({
@@ -69,73 +63,15 @@ function ViewTypeSelector({
   );
 }
 
+/**
+ * 文件夹「当前类型」的小图标。
+ *
+ * 以前这里抄了 4 段内联 SVG，与侧栏切换器、右键菜单那套各画一遍；加 video / audio
+ * 时就会漏。现在统一取 `contentTypeMeta`（唯一来源）。
+ */
 const getTypeIcon = (type: ContentType) => {
-  switch (type) {
-    case "article":
-      return (
-        <svg
-          className="size-3 text-muted-foreground"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          />
-        </svg>
-      );
-    case "picture":
-      return (
-        <svg
-          className="size-3 text-muted-foreground"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-          />
-        </svg>
-      );
-    case "notification":
-      return (
-        <svg
-          className="size-3 text-muted-foreground"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-          />
-        </svg>
-      );
-    case "social":
-      return (
-        <svg
-          className="size-3 text-muted-foreground"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8z"
-          />
-        </svg>
-      );
-  }
+  const Icon = contentTypeMeta[type].icon;
+  return <Icon className="size-3 text-muted-foreground" />;
 };
 
 /** 20-3：文件夹完整路径（`父 / 子`），多层下拉按路径认文件夹 */

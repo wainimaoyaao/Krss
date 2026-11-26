@@ -552,6 +552,8 @@ export const defaultUISettings: UISettings = {
     picture: false,
     notification: false,
     social: false,
+    video: false,
+    audio: false,
   },
   // 进视口预载：默认开（用户 2026-10-10 原话「订阅条目出现在视口内时后台批量执行」）
   entryPrefetch: true,
@@ -561,12 +563,16 @@ export const defaultUISettings: UISettings = {
     picture: false,
     notification: false,
     social: true,
+    video: false,
+    audio: false,
   },
   splitterVisibleByView: {
     article: true,
     picture: false,
     notification: false,
     social: false,
+    video: true,
+    audio: true,
   },
   reduceMotion: false,
   quoteStyle: "card",
@@ -584,12 +590,16 @@ export const defaultUISettings: UISettings = {
     picture: "scrollPast",
     notification: "scrollPast",
     social: "scrollPast",
+    video: "scrollPast",
+    audio: "scrollPast",
   },
   scrollReadByView: {
     article: "inherit",
     picture: "inherit",
     notification: "inherit",
     social: "inherit",
+    video: "inherit",
+    audio: "inherit",
   },
   // 20-3：默认「不实时消失」（离开视图/换订阅回来才摘掉）
   scrollReadDeferRemoval: true,
@@ -599,12 +609,16 @@ export const defaultUISettings: UISettings = {
     picture: "hour",
     notification: "hour",
     social: "hour",
+    video: "hour",
+    audio: "hour",
   },
   timelineCollapseByView: {
     article: "2",
     picture: "2",
     notification: "2",
     social: "2",
+    video: "2",
+    audio: "2",
   },
   // 26-2：通知视图时间线的时间基准 —— 默认「发布时间」（= 现状，升级零变化）
   timelineTimeBasisByView: {
@@ -612,6 +626,8 @@ export const defaultUISettings: UISettings = {
     picture: "published",
     notification: "published",
     social: "published",
+    video: "published",
+    audio: "published",
   },
   // 窄栏自动合一栏（默认开）
   timelineSingleSideByView: {
@@ -619,6 +635,8 @@ export const defaultUISettings: UISettings = {
     picture: true,
     notification: true,
     social: true,
+    video: true,
+    audio: true,
   },
   // 正文工具栏：默认七项全可见，顺序 = 现有渲染顺序
   entryToolbar: defaultEntryToolbar(),

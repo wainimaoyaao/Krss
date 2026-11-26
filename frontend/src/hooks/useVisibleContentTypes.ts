@@ -1,13 +1,9 @@
 import { useEffect, useMemo } from "react";
+import { CONTENT_TYPE_ORDER, isContentType } from "@/lib/content-type-meta";
 import type { ContentType } from "@/types/api";
 
-/** 外观设置里没配或配空时的四档默认视图 */
-export const defaultContentTypes: ContentType[] = [
-  "article",
-  "picture",
-  "notification",
-  "social",
-];
+/** 外观设置里没配或配空时的默认视图（= 全部六档，顺序见 CONTENT_TYPE_ORDER） */
+export const defaultContentTypes: ContentType[] = CONTENT_TYPE_ORDER;
 
 export interface VisibleContentTypesOptions {
   /** `useAppearanceSettings()` 的 data；未加载完是 undefined */
@@ -32,13 +28,7 @@ export function useVisibleContentTypes({
   const visibleContentTypes = useMemo(() => {
     const current = appearanceSettings?.contentTypes;
     if (!current || current.length === 0) return defaultContentTypes;
-    return current.filter(
-      (item) =>
-        item === "article" ||
-        item === "picture" ||
-        item === "notification" ||
-        item === "social",
-    );
+    return current.filter(isContentType);
   }, [appearanceSettings]);
 
   useEffect(() => {

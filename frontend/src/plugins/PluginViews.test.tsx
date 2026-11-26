@@ -11,6 +11,7 @@
  * （条目行里有一堆自己的查询，与本棒要验的参数映射无关）。
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import type { ContentType } from "@/types/api";
 import {
   cleanup,
   fireEvent,
@@ -88,7 +89,14 @@ function wrapper({ children }: { children: React.ReactNode }) {
   );
 }
 
-const counts = { article: 3, picture: 2, notification: 1, social: 4 };
+const counts: Record<ContentType, number> = {
+  article: 3,
+  picture: 2,
+  notification: 1,
+  social: 4,
+  video: 5,
+  audio: 6,
+};
 const builtinTypes = ["article", "picture", "notification", "social"] as const;
 
 /** 两个插件视图：一个声明式（alpha）、一个自定义（zeta）——故意乱序传入，验排序 */
