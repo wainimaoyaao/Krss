@@ -51,6 +51,7 @@ import { useRefreshReportWatcher } from "@/hooks/useRefreshReportWatcher";
 import { PluginViewOutlet } from "@/plugins/PluginViewPane";
 import { usePluginViewRoute } from "@/plugins/usePluginViewRoute";
 import { useFeedJumpBack } from "@/hooks/useFeedJumpBack";
+import { useDocumentAppearance } from "@/hooks/useDocumentAppearance";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { refreshAllFeeds } from "@/api";
 import { ShortcutsHelpDialog } from "@/components/shortcuts/ShortcutsHelpDialog";
@@ -72,13 +73,6 @@ import {
   useUISettingActions,
   hasSidebarVisibilitySetting,
   setUISetting,
-  applyAccentColorToDocument,
-  applyQuoteStyleToDocument,
-  applyComponentRadiusToDocument,
-  applyFieldRadiusToDocument,
-  applyIconRadiusToDocument,
-  applyReduceMotionToDocument,
-  applyUiScaleToDocument,
   refreshDeviceScopedSettings,
 } from "@/hooks/useUISettings";
 import { useRefreshStatus } from "@/hooks/useRefreshStatus";
@@ -360,7 +354,6 @@ function AuthenticatedApp() {
     [selectFilter, closeSidebar],
   );
 
-  // 「减少动态效果」落到 <html data-reduce-motion>，由 CSS 统一压掉动画
   // 刷新结果弹框：盯住「刷新中 → 刷新完」的跳变（用户 11-8）
   useRefreshReportWatcher();
 
@@ -369,46 +362,8 @@ function AuthenticatedApp() {
     initProxyImageRecovery();
   }, []);
 
-  const reduceMotion = useUISettingKey("reduceMotion");
-  useEffect(() => {
-    applyReduceMotionToDocument(Boolean(reduceMotion));
-  }, [reduceMotion]);
-
-  // 「引文样式」落到 <html data-quote-style>：强调块 / Folo 式分割线
-  const quoteStyle = useUISettingKey("quoteStyle");
-  useEffect(() => {
-    applyQuoteStyleToDocument(quoteStyle);
-  }, [quoteStyle]);
-
-  // 18 批：圆角（设置 → 外观 → 形状）—— 组件 / 表单 / 订阅图标 三个旋钮
-  const componentRadius = useUISettingKey("componentRadius");
-  const fieldRadius = useUISettingKey("fieldRadius");
-  const iconRadius = useUISettingKey("iconRadius");
-
-  // 主题色（设置 → 外观 → 主题 → 主题色）：null = 跟随主题
-  const accentColor = useUISettingKey("accentColor");
-  useEffect(() => {
-    applyAccentColorToDocument(accentColor ?? null);
-  }, [accentColor]);
-
-  // 「界面字号」改 <html> 基准字号（界面用的都是 rem，整体跟着缩放）
-  const uiScale = useUISettingKey("uiScale");
-  useEffect(() => {
-    applyUiScaleToDocument(uiScale);
-  }, [uiScale]);
-
-  // 18 批：圆角（组件 / 表单 / 订阅图标 三个旋钮），落 <html> 上的 CSS 变量；默认档把变量摘掉
-  useEffect(() => {
-    applyComponentRadiusToDocument(componentRadius);
-  }, [componentRadius]);
-
-  useEffect(() => {
-    applyFieldRadiusToDocument(fieldRadius);
-  }, [fieldRadius]);
-
-  useEffect(() => {
-    applyIconRadiusToDocument(iconRadius);
-  }, [iconRadius]);
+  // 外观类设置落到 <html>：减少动态效果 / 引文样式 / 主题色 / 界面字号 / 圆角三个旋钮
+  useDocumentAppearance();
 
   /**
    * 12-7：即时型设置项（开关 / 数量 / 下拉）改一下就落库，这里给一句「已保存」。
