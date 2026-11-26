@@ -28,6 +28,12 @@ import (
 const feedTimeout = 30 * time.Second
 const maxFeedSummaryPromptReminderLength = 2000
 
+// addIconBackfillTimeout 后台补图标的总时长上限。
+//
+// 请求早就返回给用户了，这段等待没人感知；但也不能无限挂着：图标阶梯最长 30s + 10s
+// 加两次外部兜底，60 秒足够跑完一轮，跑不完就交给下一轮刷新。
+const addIconBackfillTimeout = 60 * time.Second
+
 type FeedService interface {
 	Add(ctx context.Context, feedURL string, folderID *int64, titleOverride string, feedType string) (model.Feed, error)
 	// AddMCP 新建一条 MCP 订阅（16 批）：落一条普通 feed 行（source_type='mcp'），
@@ -212,9 +218,23 @@ func (s *feedService) Add(ctx context.Context, feedURL string, folderID *int64, 
 		if siteURL == "" {
 			siteURL = trimmedURL // Use feed URL as fallback for favicon
 		}
-		if iconPath, err := s.icons.FetchAndSaveIconForFeed(ctx, created.ID, fetched.imageURL, siteURL); err == nil && iconPath != "" {
+		// 图标不是订阅能用的前提，而这里的等待是用户在对话框里盯着转圈：实测同一个「站点
+		// 没有 favicon」的受控源要 10.31 秒（图标阶梯每一档都耗到超时）。给一个和刷新路径
+		// 同样的短预算，超了就先放行，图标交给后台补齐（backfillIcon）。
+		iconCtx, cancelIcon := context.WithTimeoutCause(ctx, iconRefreshBudget, errIconRefreshBudget)
+		iconPath, iconErr := s.icons.FetchAndSaveIconForFeed(iconCtx, created.ID, fetched.imageURL, siteURL)
+		budgetExhausted := errors.Is(context.Cause(iconCtx), errIconRefreshBudget)
+		cancelIcon()
+		switch {
+		case iconErr == nil && iconPath != "":
 			_ = s.feeds.UpdateIconPath(ctx, created.ID, iconPath)
 			created.IconPath = &iconPath
+		case budgetExhausted:
+			logger.Debug("icon refresh skipped by budget", "module", "service", "action", "create", "resource", "icon", "feed_id", created.ID, "budget", iconRefreshBudget.String())
+			s.backfillIcon(created.ID, fetched.imageURL, siteURL)
+		default:
+			// 抓不到（站点没有图标 / 出网受限）：不进后台重试，下一轮刷新自然会再试一次。
+			logger.Debug("icon fetch failed", "module", "service", "action", "create", "resource", "icon", "feed_id", created.ID, "error", iconErr)
 		}
 	}
 
@@ -229,6 +249,30 @@ func (s *feedService) Add(ctx context.Context, feedURL string, folderID *int64, 
 	}
 
 	return created, nil
+}
+
+// backfillIcon 在请求返回之后再去补图标。
+//
+// 为什么必须开自己的 goroutine：Add 的 ctx 是 HTTP 请求的 ctx，处理函数一返回就被取消，
+// 沿用它后台那次抓取会立刻失败。这里用带自己超时的 context，抓到了再写回订阅。
+func (s *feedService) backfillIcon(feedID int64, imageURL, siteURL string) {
+	if s.icons == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), addIconBackfillTimeout)
+		defer cancel()
+		iconPath, err := s.icons.FetchAndSaveIconForFeed(ctx, feedID, imageURL, siteURL)
+		if err != nil || iconPath == "" {
+			logger.Debug("icon backfill skipped", "module", "service", "action", "create", "resource", "icon", "feed_id", feedID, "error", err)
+			return
+		}
+		if saveErr := s.feeds.UpdateIconPath(ctx, feedID, iconPath); saveErr != nil {
+			logger.Warn("icon backfill save failed", "module", "service", "action", "create", "resource", "icon", "feed_id", feedID, "error", saveErr)
+			return
+		}
+		logger.Info("icon backfilled", "module", "service", "action", "create", "resource", "icon", "result", "ok", "feed_id", feedID)
+	}()
 }
 
 // AddMCP 新建 MCP 订阅（16 批）。与 Add() 的差别只在「怎么取第一批」：
