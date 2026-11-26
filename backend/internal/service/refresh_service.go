@@ -250,13 +250,16 @@ func (s *refreshService) processParsedFeed(ctx context.Context, feed model.Feed,
 	return nil
 }
 
-// iconRefreshBudget 刷新路径上给图标抓取的时间上限。
+// iconRefreshBudget 图标抓取的时间上限，刷新路径与添加订阅路径共用。
 //
 // 为什么需要它：图标抓取会依次尝试 RSS 图片、站点 favicon、首页里声明的图标，最后是
 // Google / DuckDuckGo 的 favicon 兜底 —— 这几步在「站点没有图标」或「出网受限」时全都
 // 会各自耗到超时。它挂在刷新轮次的收尾路径上，于是整轮回合的耗时被它决定：实测本机
 // 受控源（本地即时响应的 RSS、200 条条目、站点没有 favicon）单轮 10.4–12.3 秒，而把
 // 条目数从 200 降到 50 一秒都不省。3 秒够抓到正常的 favicon，抓不到就下一轮再试。
+//
+// 添加订阅那条路径（feed_service.Add）用的是同一个预算：那里用户在对话框里等着，
+// 超了就先放行、把图标交给后台补齐（backfillIcon）。
 const iconRefreshBudget = 3 * time.Second
 
 const (
