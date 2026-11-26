@@ -50,6 +50,8 @@ type entryResponse struct {
 	Content         *string `json:"content,omitempty"`
 	ReadableContent *string `json:"readableContent,omitempty"`
 	ThumbnailURL    *string `json:"thumbnailUrl,omitempty"`
+	MediaURL        *string `json:"mediaUrl,omitempty"`
+	MediaType       *string `json:"mediaType,omitempty"`
 	Author          *string `json:"author,omitempty"`
 	PublishedAt     *string `json:"publishedAt,omitempty"`
 	Read            bool    `json:"read"`
@@ -618,6 +620,8 @@ func toEntryResponse(e model.Entry) entryResponse {
 		Content:         e.Content,
 		ReadableContent: e.ReadableContent,
 		ThumbnailURL:    e.ThumbnailURL,
+		MediaURL:        e.MediaURL,
+		MediaType:       e.MediaType,
 		Author:          e.Author,
 		Read:            e.Read,
 		Starred:         e.Starred,

@@ -708,6 +708,14 @@ func runMigrations(db *sql.DB) error {
 		return fmt.Errorf("drop unused FTS index: %w", err)
 	}
 
+	// Migration 41: Persist the playable RSS attachment independently of the article URL.
+	if err := addColumnIfMissing(db, "entries", "media_url", `ALTER TABLE entries ADD COLUMN media_url TEXT`); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "entries", "media_type", `ALTER TABLE entries ADD COLUMN media_type TEXT`); err != nil {
+		return err
+	}
+
 	return nil
 }
 

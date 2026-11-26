@@ -11,6 +11,8 @@ type Entry struct {
 	Content         *string
 	ReadableContent *string
 	ThumbnailURL    *string
+	MediaURL        *string
+	MediaType       *string
 	Author          *string
 	PublishedAt     *time.Time
 	Read            bool

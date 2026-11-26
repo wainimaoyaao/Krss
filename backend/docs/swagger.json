@@ -5203,6 +5203,12 @@
                 "id": {
                     "type": "string"
                 },
+                "mediaType": {
+                    "type": "string"
+                },
+                "mediaUrl": {
+                    "type": "string"
+                },
                 "muted": {
                     "description": "Muted 条目是被过滤规则静音的（列表默认隐藏，可在「已静音」里回看）。",
                     "type": "boolean"
